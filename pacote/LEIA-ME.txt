@@ -1,0 +1,9 @@
+1. Extraia o zip inteiro no servidor da empresa.
+2. Abra instalar.bat e aceite a permissao de administrador. Instala em C:\JC\Coletor de Dados.
+3. Informe o banco do Lieto, a senha e os administradores. O instalador so consulta o banco.
+4. HTTPS: responda S no fim, ou rode depois https\instalar-https.bat (o Caddy ja vem junto).
+5. Entre em http://IP-DO-SERVIDOR:3090 com um administrador.
+6. Sistema: confira a conformidade do banco e as empresas por rotina. Liberacoes: marque os usuarios.
+7. XML: cadastre canais e pastas. A importacao automatica vem DESLIGADA.
+Atualizar: feche a janela Operacoes Lieto e rode o instalar.bat do zip novo. Dados e configuracao sao mantidos.
+Trocar banco ou administradores: instalar.bat -Reconfigurar

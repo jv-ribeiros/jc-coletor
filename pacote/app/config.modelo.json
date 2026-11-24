@@ -1,0 +1,34 @@
+{
+  "empresa": "",
+  "firebird": {
+    "host": "",
+    "port": 3050,
+    "database": "",
+    "user": "SYSDBA",
+    "password": "",
+    "encoding": "WIN1252"
+  },
+  "admins": [],
+  "estoque": {
+    "modest": 0,
+    "calculo": "auto",
+    "pedent": "V"
+  },
+  "regras": {
+    "toleranciaQtd": 0,
+    "toleranciaPct": 0,
+    "exigirLocal": false,
+    "exigirEquipeDiferente": true
+  },
+  "lancamento": {
+    "codfun": null,
+    "obs": "AJUSTE INVENTARIO #{id}"
+  },
+  "xml": {
+    "importadas": ""
+  },
+  "producao": {
+    "lancamentoAutomatico": true,
+    "bloquearSaldoNegativo": false
+  }
+}
