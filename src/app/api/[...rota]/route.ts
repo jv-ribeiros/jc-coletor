@@ -145,7 +145,7 @@ const rotas: [string, string, Handler][] = [
 
   // ---------- importação de XML ----------
   ["GET", "xml", () => X.situacao()],
-  ["POST", "xml/pasta", ({ body, usuario }) => { exigirAdmin(usuario); X.definirPastas(body.pastas, usuario!); X.varrer(); }],
+  ["POST", "xml/pasta", ({ body, usuario }) => { exigirAdmin(usuario); X.definirPastas(body.pastas, usuario!); X.varrer().catch((e) => console.error("[XML]", e)); }],
   ["POST", "xml/enviar", ({ body }) => X.enviar(body)],
   ["POST", "xml/vincular", ({ body, usuario }) => X.vincular(body, usuario!)],
   ["GET", "xml/pastas", ({ q, usuario }) => { exigirAdmin(usuario); return X.navegar(q.get("p") || ""); }],

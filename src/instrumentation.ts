@@ -11,10 +11,10 @@ export async function register() {
     for (const r of ruins) console.error(`  - ${r.nome}: ${r.diferencas.map((d) => d.objeto).join(", ")}`);
     console.error("Confira em /sistema antes de homologar.\n" + "!".repeat(70) + "\n");
   } else console.log(`[CONFORMIDADE] OK: estrutura do Lieto (versão ${s.versaoLieto}) igual à homologada.`);
-  // pasta de XML: lê a cada 10 s (sem pasta definida, não faz nada)
+  // pasta de XML (com subpastas): lê a cada 10 s (sem pasta definida, não faz nada)
   const xml = await import("@/lib/server/xml");
   const imp = await import("@/lib/server/xmlimport");
-  setInterval(() => { try { xml.varrer(); imp.processar().catch((e) => console.error("[XML]", e)); } catch (e) { console.error("[XML]", e); } }, 10_000).unref?.();
+  setInterval(() => { xml.varrer().catch((e) => console.error("[XML]", e)).then(() => imp.processar()).catch((e) => console.error("[XML]", e)); }, 10_000).unref?.();
   // reconfere a cada 10 minutos (alguém pode atualizar o Lieto com o sistema no ar)
   setInterval(() => ddl.verificar().catch(() => {}), 10 * 60_000).unref?.();
 }

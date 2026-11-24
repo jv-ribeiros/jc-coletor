@@ -7,6 +7,8 @@ try {
   if (-not [Environment]::Is64BitOperatingSystem) { throw 'Precisa de Windows 64 bits.' }
   $origem = Join-Path $PSScriptRoot 'app'; $antigo = 'C:\LietoOperacoes'
   if (-not (Test-Path "$origem\node.exe")) { throw 'Extraia o zip inteiro antes de instalar.' }
+  $sv = Get-Service JCColetor -ErrorAction SilentlyContinue
+  if ($sv -and $sv.Status -ne 'Stopped') { Write-Host 'Parando o servico...'; Stop-Service JCColetor -Force; Start-Sleep 1 }
   if (Get-NetTCPConnection -State Listen -LocalPort 3090 -ErrorAction SilentlyContinue) { throw 'A porta 3090 esta em uso. Feche o sistema (janela Operacoes Lieto) e rode de novo.' }
   New-Item -ItemType Directory -Force $Destino | Out-Null
 
@@ -65,12 +67,18 @@ try {
   Remove-Item Env:L_ADMINS -ErrorAction SilentlyContinue
 
   if (-not (Get-NetFirewallRule -DisplayName 'Operacoes Lieto 3090' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -DisplayName 'Operacoes Lieto 3090' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3090 -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null }
-  # abre sozinho quando alguem entra no Windows
+  # abre sozinho quando alguem entra no Windows (com o servico instalado, quem abre e o servico)
   $w = New-Object -ComObject WScript.Shell
-  foreach ($p in 'CommonStartup', 'CommonDesktopDirectory') { $l = $w.CreateShortcut((Join-Path ([Environment]::GetFolderPath($p)) 'Operacoes Lieto.lnk')); $l.TargetPath = "$Destino\iniciar.bat"; $l.WorkingDirectory = $Destino; $l.Save() }
-  Start-Process explorer.exe "`"$Destino\iniciar.bat`""
+  foreach ($p in $(if ($sv) { 'CommonDesktopDirectory' } else { 'CommonStartup', 'CommonDesktopDirectory' })) { $l = $w.CreateShortcut((Join-Path ([Environment]::GetFolderPath($p)) 'Operacoes Lieto.lnk')); $l.TargetPath = "$Destino\iniciar.bat"; $l.WorkingDirectory = $Destino; $l.Save() }
+  if ($sv) { Start-Service JCColetor; $sv = $null; $comServico = $true }
+  elseif ((Read-Host 'Deixar como servico, rodando sem ninguem logado? (S/N) [S]') -notmatch '^[nN]') { & "$Destino\servico\instalar-servico.ps1" -SemPausa; $comServico = $global:ServicoOk -or (Get-Service JCColetor -ErrorAction SilentlyContinue) }
+  if (-not $comServico) { Start-Process explorer.exe "`"$Destino\iniciar.bat`"" }
   Write-Host ''; Write-Host "Instalado em $Destino" -ForegroundColor Green
   Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127|169\.254)\.' } | ForEach-Object { Write-Host "  http://$($_.IPAddress):3090   ($($_.InterfaceAlias))" }
   if (-not $srv -and (Read-Host 'Instalar o HTTPS agora? (S/N) [N]') -match '^[sS]') { & "$Destino\https\instalar-https.ps1" -SemPausa }
-} catch { Write-Host "ERRO: $($_.Exception.Message)" -ForegroundColor Red }
+} catch {
+  Write-Host "ERRO: $($_.Exception.Message)" -ForegroundColor Red
+  # falhou antes de terminar: nao deixa o servico parado
+  if ($sv -and (Test-Path "$Destino\.next\BUILD_ID")) { Start-Service JCColetor -ErrorAction SilentlyContinue }
+}
 Read-Host 'Enter para fechar'
