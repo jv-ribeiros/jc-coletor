@@ -9,5 +9,5 @@
 6. Entre em http://IP-DO-SERVIDOR:3090 com um administrador.
 7. Sistema: confira a conformidade do banco e as empresas por rotina. Liberacoes: marque os usuarios.
 8. XML: cadastre canais e pastas (as subpastas entram junto). A importacao automatica vem DESLIGADA.
-Atualizar: rode o instalar.bat do zip novo (sem servico, feche antes a janela Operacoes Lieto). Dados e configuracao sao mantidos.
+Atualizar: abra atualizar.bat na pasta do sistema. Ele baixa e troca sozinho; dados e configuracao sao mantidos.
 Trocar banco ou administradores: instalar.bat -Reconfigurar
