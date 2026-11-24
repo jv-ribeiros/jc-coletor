@@ -68,19 +68,19 @@ function useInventarios() {
 function Entrada({ entrar }: { entrar: (inv: number) => void }) {
   const { invs, erro, carregar } = useInventarios(), u = sessao.usuario(), pode = usePode()(["inventario_avulso"]), [abrindo, setAbrindo] = useState(false);
   return (
-    <div className="min-h-dvh bg-brand-900 text-white">
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pb-6 pt-8">
+    <div className="inv min-h-dvh bg-canvas">
+      <div className="mx-auto flex min-h-dvh max-w-[560px] flex-col px-3.5 pb-6 pt-3">
         <div className="flex items-center gap-3">
-          <Link href="/coletor" className="grid size-11 place-items-center rounded-xl bg-white/10" title="Voltar aos módulos"><ArrowLeft className="size-6" /></Link>
-          <div className="flex-1"><div className="text-lg font-semibold">Coletor de inventário</div><div className="text-sm text-brand-100/70">Olá, {u?.nome}</div></div>
-          <button onClick={sair} className="grid size-10 place-items-center rounded-lg bg-white/10" title="Sair"><LogOut className="size-5" /></button>
+          <Link href="/coletor" className="ic" title="Voltar aos módulos"><ArrowLeft className="size-6" /></Link>
+          <div className="flex-1"><div className="text-lg font-semibold">Inventário</div><div className="text-sm text-muted">{u?.nome}</div></div>
+          <button onClick={sair} className="ic" title="Sair"><LogOut className="size-5" /></button>
         </div>
         {abrindo ? <AbrirAvulso entrar={entrar} voltar={() => setAbrindo(false)} /> : <>
-        <div className="mt-8 flex items-center justify-between text-sm font-medium text-brand-100"><span>Escolha o inventário</span>
-          <button onClick={carregar} className="grid size-9 place-items-center rounded-lg bg-white/10"><RefreshCw className="size-4" /></button></div>
+        <div className="mt-8 flex items-center justify-between text-base font-semibold text-muted"><span>Escolha o inventário</span>
+          <button onClick={carregar} className="ic"><RefreshCw className="size-4" /></button></div>
         <ListaInventarios invs={invs} erro={erro} atual={null} escolher={entrar} escuro />
-        <button disabled={!pode} onClick={() => setAbrindo(true)} className="mt-4 h-14 w-full rounded-xl bg-brand-500 text-[16px] font-semibold disabled:opacity-40">Abrir inventário avulso</button>
-        {!pode && <p className="mt-2 text-[13px] text-brand-100/70">Seu usuário não tem a liberação &quot;Inventário: abrir avulso&quot;.</p>}
+        <button disabled={!pode} onClick={() => setAbrindo(true)} className="bt1 mt-4">Abrir inventário avulso</button>
+        {!pode && <p className="mt-2 text-[14px] text-muted">Seu usuário não tem a liberação &quot;Inventário: abrir avulso&quot;.</p>}
         </>}
       </div>
     </div>
@@ -92,7 +92,7 @@ function AbrirAvulso({ entrar, voltar }: { entrar: (inv: number) => void; voltar
   useEffect(() => { api("inventarios/avulso/empresa").then(setEmp).catch((e) => setErro((e as Error).message)); }, []);
   async function abrir() { setOc(true); setErro(""); try { entrar((await api("inventarios/avulso", { uid: uid.current, descricao: nome, obs })).id); } catch (e) { setErro((e as Error).message); setOc(false); } }
   return (
-    <div className="mt-6 space-y-3 bg-white p-4 text-ink">
+    <div className="corpo mt-4 !px-0">
       <Campo nome="Nome"><input className={campoCol} maxLength={140} value={nome} onChange={(e) => setNome(e.target.value)} /></Campo>
       <Campo nome="Empresa"><input className={campoCol} disabled readOnly value={emp ? `${emp.codemp} · ${emp.nomemp}` : erro ? "—" : "Carregando…"} /></Campo>
       <Observacao valor={obs} mudar={setObs} cabe={0} />
@@ -106,7 +106,7 @@ function ListaInventarios({ invs, erro, atual, escolher, escuro }: { invs: Row[]
   const cor = ["", "bg-sky-500", "bg-amber-500", "bg-rose-500"];
   return (
     <div className="mt-2 space-y-2">
-      {invs === null && <div className={cx("h-16 animate-pulse rounded-xl", escuro ? "bg-white/10" : "bg-slate-200")} />}
+      {invs === null && <div className={cx("h-16 animate-pulse rounded-xl", "bg-slate-200")} />}
       {invs?.map((i) => {
         const n = { CONTAGEM: 1, RECONTAGEM: 2, AUDITORIA: 3 }[i.etapa as string] || 0, sel = atual === i.id;
         return (
@@ -118,8 +118,8 @@ function ListaInventarios({ invs, erro, atual, escolher, escuro }: { invs: Row[]
           </button>
         );
       })}
-      {invs?.length === 0 && !erro && <p className={cx("rounded-xl px-4 py-3 text-sm", escuro ? "bg-white/10" : "bg-white")}>Nenhum inventário aberto para contagem.</p>}
-      {erro && <p className="rounded-xl bg-rose-500/20 px-4 py-3 text-sm text-rose-50">{erro}</p>}
+      {invs?.length === 0 && !erro && <p className={cx("rounded-xl px-4 py-3 text-sm", "bg-white")}>Nenhum inventário aberto para contagem.</p>}
+      {erro && <p className="rounded-xl bg-rose-100 px-4 py-3 text-sm text-rose-800">{erro}</p>}
     </div>
   );
 }
@@ -315,18 +315,18 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
   const salvarLocal = (l: string) => { const v = l.trim().toUpperCase(); if (exigirLocal && !v) return erro("Informe o local."); setLocal(v); ls.set("local", v); setEditLocal(false); setAviso(null); };
 
   return (
-    <div className="flex h-dvh flex-col bg-slate-100">
+    <div className="inv flex h-dvh flex-col bg-canvas">
       {/* ---------- topo ---------- */}
-      <header className="z-20 shrink-0 bg-brand-900 px-3 py-2.5 text-white shadow-lg">
+      <header className="z-20 shrink-0 px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <Link href="/coletor" aria-label="Voltar ao menu" onClick={(e) => { if (expr && !confirm("Há uma quantidade digitada e não gravada. Sair mesmo assim?")) e.preventDefault(); }} className="grid size-10 shrink-0 place-items-center bg-white/10"><ArrowLeft className="size-5" /></Link>
+          <Link href="/coletor" aria-label="Voltar ao menu" onClick={(e) => { if (expr && !confirm("Há uma quantidade digitada e não gravada. Sair mesmo assim?")) e.preventDefault(); }} className="ic"><ArrowLeft className="size-5" /></Link>
           <button onClick={() => setTrocando(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
             <span className="min-w-0"><span className="block truncate text-[15px] font-semibold">{cat ? cat.descricao : "Carregando…"}</span>
-              <span className="block text-[12px] text-brand-100/70">{op}{bipagem && cat?.etapaNum !== 3 ? " · bipagem +1" : ""}</span></span>
-            <ChevronDown className="size-4 shrink-0 text-brand-100/70" />
+              <span className="block text-[13px] text-muted">{op}{bipagem && cat?.etapaNum !== 3 ? " · bipagem +1" : ""}</span></span>
+            <ChevronDown className="size-5 shrink-0 text-muted" />
           </button>
-          <span className={cx("rounded-md px-2 py-1 text-[11px] font-bold uppercase tracking-wide", corEtapa)}>{cat ? NOME_ETAPA[cat.etapa] : "—"}</span>
-          <span className={cx("flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-semibold", online ? "bg-white/10" : "bg-rose-600")}>
+          <span className={cx("rounded-full px-3 py-1.5 text-[12px] font-bold text-white", corEtapa)}>{cat ? NOME_ETAPA[cat.etapa] : "—"}</span>
+          <span className={cx("flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-semibold", online ? "bg-white" : "bg-rose-600 text-white")}>
             {online ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}{pend.length > 0 ? pend.length : online ? "" : "off"}
           </span>
         </div>
@@ -369,11 +369,11 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
         {!editLocal && !prod && (
           <section className="rounded-2xl bg-white p-3 shadow-sm">
             <form onSubmit={(e) => { e.preventDefault(); enter(); }} className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-[18px] size-6 text-muted" />
+              <Search className="pointer-events-none absolute left-4 top-6 size-6 text-muted" />
               <input ref={refBusca} value={busca} onChange={(e) => setBusca(e.target.value)} inputMode={teclado ? "search" : "none"} enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false}
                 placeholder="Bipe ou digite o produto"
-                className="h-[60px] w-full rounded-xl border-2 border-brand-600 bg-brand-50/40 pl-12 pr-24 text-xl font-semibold outline-none placeholder:text-[15px] placeholder:font-normal focus:ring-4 focus:ring-brand-500/20" />
-              <div className="absolute right-2 top-2 flex gap-1">
+                className="h-[72px] w-full rounded-xl border-2 border-brand-600 bg-brand-50/40 pl-12 pr-[136px] text-xl font-semibold outline-none placeholder:text-[15px] placeholder:font-normal focus:ring-4 focus:ring-brand-500/20" />
+              <div className="absolute right-1 top-1 flex">
                 {busca && <button type="button" onClick={() => { setBusca(""); refBusca.current?.focus(); }} className="grid size-11 place-items-center rounded-lg text-muted"><X className="size-5" /></button>}
                 <button type="button" onClick={() => { const v = !teclado; setTeclado(v); ls.set("teclado", v); refBusca.current?.blur(); setTimeout(() => refBusca.current?.focus(), 60); }}
                   className="grid size-11 place-items-center rounded-lg text-muted">{teclado ? <Keyboard className="size-5" /> : <KeyboardOff className="size-5" />}</button>
@@ -415,7 +415,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
               <button onClick={fecharProduto} className="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-muted"><X className="size-5" /></button>
             </div>
             <div className="p-3">
-              <div className="rounded-xl border-2 border-brand-600 px-3 py-2">
+              <div className="visorinv rounded-xl border-2 border-brand-600 px-3 py-2">
                 <input ref={refQtd} value={bonito(expr)} inputMode="none" autoComplete="off"
                   onChange={(e) => setExpr(e.target.value.replace(/[x×]/gi, "*").replace(/\s/g, "").replace(/[^\d.,+*]/g, "").replace(/\./g, ","))}
                   onKeyDown={(e) => { if (palete) { e.preventDefault(); if (e.key === "Enter") adicionarPalete(); else if (e.key === "Escape") fecharPalete(); else if (e.key === "Backspace") tecla("⌫"); else tecla(e.key); return; }
@@ -427,7 +427,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
                   <span className="text-lg font-semibold text-muted">{prod.un}</span>
                 </div>
               </div>
-              <div className="mt-2 grid grid-cols-4 gap-2">
+              <div className="teclado mt-2 grid grid-cols-4 gap-2">
                 {["7", "8", "9", "×", "4", "5", "6", "+", "1", "2", "3", "⌫", ",", "0", "C"].map((k) => (
                   <button key={k} onClick={() => tecla(k)}
                     className={cx("h-[52px] touch-manipulation select-none rounded-xl text-2xl font-semibold active:brightness-90", /[\d,]/.test(k) ? "bg-slate-100" : k === "×" || k === "+" ? "bg-brand-100 text-brand-800" : "bg-slate-200 text-slate-700")}>
@@ -437,10 +437,10 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
                 <button onClick={abrirPalete} className="flex h-[52px] flex-col items-center justify-center touch-manipulation select-none rounded-xl bg-amber-100 text-amber-900 active:brightness-90"><Layers className="size-5" /><span className="text-[11px] font-bold">PALETE</span></button>
               </div>
               {palete ? (
-                <button onClick={adicionarPalete} className="mt-2 h-14 w-full rounded-xl bg-brand-700 text-xl font-bold text-white transition active:scale-[.98]">{campoPal === "l" ? "Somar paletes" : "Próximo"}</button>
+                <button onClick={adicionarPalete} className="mt-2 h-[68px] w-full rounded-xl bg-brand-800 text-xl font-bold text-white transition active:scale-[.98]">{campoPal === "l" ? "Somar paletes" : "Próximo"}</button>
               ) : (
               <button onClick={gravar} disabled={isNaN(vTotal)}
-                className="mt-2 h-14 w-full rounded-xl bg-brand-600 text-xl font-bold text-white transition active:scale-[.98] disabled:bg-slate-300 disabled:text-slate-500">
+                className="mt-2 h-[68px] w-full rounded-xl bg-brand-800 text-xl font-bold text-white transition active:scale-[.98] disabled:bg-slate-300 disabled:text-slate-500">
                 {cat?.etapaNum === 3 ? "Gravar final" : "Gravar"} {isNaN(vTotal) ? "" : `${fq(vTotal)} ${prod.un}`}
               </button>
               )}
@@ -544,7 +544,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
           {([["contar", "Contar", ScanBarcode, 0], ["lista", cat?.etapaNum === 3 ? "Diferenças" : "Lista", ListChecks, nPend], ["leituras", "Leituras", History, rej.length || pend.length],
             ["ajustes", "Ajustes", Settings2, 0]] as const).map(([k, n, Ic, c]) => (
             <button key={k} onClick={() => { if (k === "contar" && aba === "contar" && !prod) { setBusca(""); refBusca.current?.focus(); } irPara(k); }}
-              className={cx("relative flex h-[64px] flex-col items-center justify-center gap-0.5 text-[12px] font-semibold", aba === k ? "text-brand-700" : "text-slate-500")}>
+              className={cx("relative flex h-[72px] flex-col items-center justify-center gap-0.5 text-[12px] font-semibold", aba === k ? "text-brand-700" : "text-slate-500")}>
               {aba === k && <span className="absolute inset-x-6 top-0 h-[3px] rounded-b-full bg-brand-600" />}
               <span className="relative"><Ic className="size-6" strokeWidth={aba === k ? 2.4 : 2} />
                 {c > 0 && <span className={cx("absolute -right-3 -top-1.5 min-w-[18px] rounded-full px-1 text-center text-[10px] font-bold leading-[18px] text-white", k === "leituras" && rej.length ? "bg-rose-600" : "bg-ink")}>{c > 999 ? "999+" : c}</span>}
@@ -576,7 +576,7 @@ function Chave({ icone, titulo, texto, ligado, mudar }: { icone: React.ReactNode
 
 function Folha({ titulo, fechar, children, rodape }: { titulo: string; fechar: () => void; children: React.ReactNode; rodape?: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && fechar()}>
+    <div className="inv fixed inset-0 z-40 flex flex-col justify-end bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && fechar()}>
       <div className="anim-entra flex max-h-[88dvh] flex-col rounded-t-3xl bg-slate-100 pb-[env(safe-area-inset-bottom)]">
         <div className="flex items-center gap-3 px-4 pb-2 pt-3">
           <span className="flex-1 text-[17px] font-bold">{titulo}</span>

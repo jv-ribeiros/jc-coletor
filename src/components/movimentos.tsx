@@ -6,6 +6,13 @@ import { Campo, campoCol } from "@/components/coletor";
 import { api, chave, fatorLido, fq, nomeFator, r4, type Row } from "@/lib/client";
 
 export const novoUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+export function bip(ok: boolean) {
+  try {
+    const ac = new AudioContext(), o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = ok ? 1600 : 280; o.connect(g); g.connect(ac.destination); g.gain.value = 0.15; o.start(); o.stop(ac.currentTime + (ok ? 0.08 : 0.35)); o.onended = () => ac.close();
+  } catch {}
+  try { navigator.vibrate?.(ok ? 40 : [140, 70, 140]); } catch {}
+}
 export const numero = (s: string) => Number(String(s).replace(",", "."));
 export const campo = "h-12 w-full rounded-xl bg-white px-3 text-[16px] outline-none ring-2 ring-line focus:ring-brand-500";
 
@@ -18,7 +25,7 @@ export const porCodigo = (l: Row[] | null, c: string) => l?.find((p) => p.codigo
 
 // "× 12 = 36": mostra quanto a quantidade digitada vale quando o código lido tem multiplicador
 export const rotFator = (p: Row | null, q: string) => (p?.fator && p.fator !== 1 ? ` ${nomeFator(p.fator)}${numero(q) > 0 ? ` = ${fq(r4(numero(q) * p.fator))} ${p.unipro}` : ""}` : "");
-export const Rot = ({ n }: { n: string }) => <span className="mb-1 block text-[12px] font-semibold uppercase tracking-wide text-muted">{n}</span>;
+export const Rot = ({ n }: { n: string }) => <span className="rotulo">{n}</span>;
 
 export function BuscaProduto({ lista, escolher, off }: { lista: Row[] | null; escolher: (p: Row) => void; off?: boolean }) {
   const [b, setB] = useState(""); const toast = useToast();

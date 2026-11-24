@@ -44,8 +44,8 @@ export async function listar(u: Usuario) {
     for (const f of s.falhas as Row[]) add("E", "Arquivo XML não lido", `${f.arquivo} · ${f.erro}`, f.em, "/xml", ["xml"]);
   });
   await parte("conferência", () => {
-    for (const c of todos("SELECT pedido, romaneio, usuario, erro, criado_em FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO') AND (erro IS NOT NULL OR criado_em < ?) ORDER BY id", ha(24 * H)))
-      add(c.erro ? "E" : "P", `Conferência ${c.erro ? "com erro" : "aberta há mais de 24 horas"}: ${c.pedido ? `pedido ${c.pedido}` : `romaneio ${c.romaneio}`}`, [c.erro, c.usuario].filter(Boolean).join(" · "), c.criado_em, "/conferencia", ["conferencia_gestao"]);
+    for (const c of todos("SELECT pedido, romaneio, usuario, erro, criado_em, aguarda_em FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO') AND (erro IS NOT NULL OR aguarda_em IS NOT NULL OR criado_em < ?) ORDER BY id", ha(24 * H)))
+      add(c.erro ? "E" : "P", `Conferência ${c.erro ? "com erro" : c.aguarda_em ? "com falta, esperando decisão" : "aberta há mais de 24 horas"}: ${c.pedido ? `pedido ${c.pedido}` : `romaneio ${c.romaneio}`}`, [c.erro, c.usuario].filter(Boolean).join(" · "), c.criado_em, "/conferencia", ["conferencia_gestao"]);
   });
   await parte("inventário", () => {
     for (const i of todos("SELECT id, descricao, data_prevista FROM inventarios WHERE etapa = 'PROGRAMADO' AND data_prevista < ?", agora().slice(0, 10)))

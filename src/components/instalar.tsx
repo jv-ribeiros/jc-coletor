@@ -42,7 +42,7 @@ export function BotoesApp() {
   }, []);
   function alternar() { const v = !cheia; ls.set("telacheia", v); setCheia(v); if (v) entrar(); else saindo(); }
   async function instalar() { if (!guardado) return setAjuda(true); const p = guardado; await p.prompt(); if ((await p.userChoice).outcome === "accepted") { guardado = null; avisar(); } }
-  const bt = "flex h-12 items-center justify-center gap-2 bg-white/10 text-[14px] font-semibold disabled:opacity-40";
+  const bt = "bt2 gap-2 !text-[15px]";
   return (
     <div className="grid grid-cols-2 gap-2" data-semcheia>
       <button className={bt} disabled={!podeCheia || inst} onClick={alternar}>{cheia ? <Minimize className="size-4" /> : <Maximize className="size-4" />}{cheia ? "Sair da tela cheia" : "Tela cheia"}</button>

@@ -9,8 +9,8 @@ import { api, sessao } from "@/lib/client";
 
 export function Acesso({ children }: { children: React.ReactNode }) {
   const rota = usePathname();
-  // coletor: visual reto, sem cantos arredondados (vale também para modais e avisos, que ficam no body)
-  useEffect(() => { document.body.classList.toggle("reto", rota.startsWith("/coletor")); }, [rota]);
+  // coletor: visual próprio (vale também para modais e avisos, que ficam no body)
+  useEffect(() => { document.body.classList.toggle("coletor", rota.startsWith("/coletor")); }, [rota]);
   const [st, setSt] = useState<"?" | "fora" | "dentro">("?");
   useEffect(() => {
     const ver = () => setSt(sessao.token() ? "dentro" : "fora");

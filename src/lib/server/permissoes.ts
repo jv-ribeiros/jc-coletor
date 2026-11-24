@@ -27,7 +27,7 @@ const FIXAS: Record<string, string[][]> = {
   "POST inventarios/:id/leituras": [["inventario", "inventario_gestao"]], "POST leituras/:uid/cancelar": [["inventario", "inventario_gestao"]],
   "GET inventarios/:id/ajustes": [["inventario_gestao", "inventario_lancar"]], "GET inventarios/:id/log": [["inventario_gestao", "inventario_lancar"]], "POST inventarios/:id/lancar": [["inventario_lancar"]],
   "GET inventarios/:id/fechamento": [["inventario_finalizar", "inventario_gestao"]], "POST inventarios/:id/avancar": [["inventario_finalizar", "inventario_gestao"]],
-  "POST transferencia": [["transferencia"]], "POST transformacao": [["transformacao"]], "GET transformacao/opcoes": [["transformacao"]], "POST kit": [["kit"]], "GET perda/motivos": [["perda"]], "POST perda": [["perda"]], "GET sistema/empresas": [], "GET alertas": [], "GET auditoria": [["auditoria"]], "GET auditoria/:trace": [["auditoria"]],
+  "POST transferencia": [["transferencia"]], "POST transformacao": [["transformacao"]], "GET transformacao/opcoes": [["transformacao"]], "POST kit": [["kit"]], "GET perda/motivos": [["perda"]], "POST perda": [["perda"]], "GET sistema/empresas": [], "GET sistema/conferencia": [], "GET alertas": [], "GET auditoria": [["auditoria"]], "GET auditoria/:trace": [["auditoria"]],
   "POST producao/reprocessar": [["producao_gestao"]], "POST producao/:id/lancar": [["producao_gestao"]], "POST producao/:id/cancelar": [["producao_gestao"]],
   "POST producao": [["producao"]],
   "GET receita/:cod": [["cadastro", "receita"]], "GET receita/:cod/obs": [["cadastro", "receita"]], "GET conferencia": [["conferencia_gestao"]], "GET conferencia/:id/gestao": [["conferencia_gestao"]], "POST conferencia/:id/encerrar": [["conferencia_gestao"]], "POST conferencia/:id/cancelar": [["conferencia_gestao"]],
@@ -58,7 +58,7 @@ const COLETOR = new Set([...LIVRES, "POST inventarios/avulso", "GET inventarios/
   "GET producao/catalogo", "GET producao/lotes", "GET producao/simular", "GET producao/minhas", "POST producao", "POST transferencia", "POST transformacao", "GET transformacao/opcoes", "POST kit", "GET perda/motivos", "POST perda",
   "GET cadastro", "GET cadastro/:cod", "POST cadastro/:cod", "POST cadastro/:cod/barras", "POST cadastro/:cod/barras/alterar", "POST cadastro/:cod/barras/remover", "POST cadastro/:cod/palete",
   "GET receita/:cod", "GET receita/:cod/obs", "POST receita/:cod", "POST receita/:cod/remover", "GET retorno/opcoes", "GET retorno/origem/:tipo/:n", "POST retorno",
-  "GET conferencia/fila", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "POST conferencia/:id/fechar"]);
+  "GET conferencia/fila", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "GET conferencia/minhas", "POST conferencia/:id/falta", "POST conferencia/:id/voltar", "POST conferencia/:id/fechar"]);
 
 export function exigir(u: Usuario, metodo: string, padrao: string, args: string[]) {
   const ex = [...(COLETOR.has(`${metodo} ${padrao}`) ? [] : [["gestao"]]), ...exigidas(metodo, padrao, args)];

@@ -1,48 +1,59 @@
 "use client";
-// Coletor: escolha do módulo. Cada módulo tem sua tela própria, otimizada para leitor de código de barras.
+// Coletor: tarefas primeiro. O que a pessoa deixou aberto, depois o que espera, depois as rotinas.
 import Link from "next/link";
-import { ArrowRightLeft, Factory, LogOut, PackageOpen, PackageX, ClipboardCheck, ShieldAlert, Tags, Undo2, Shuffle, Warehouse } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowRightLeft, Check, ChevronRight, Factory, LogOut, PackageOpen, PackageX, ClipboardCheck, ShieldAlert, Tags, Undo2, Shuffle, Warehouse } from "lucide-react";
 import { BotoesApp } from "@/components/instalar";
 import { sair } from "@/components/acesso";
+import { Cabecalho } from "@/components/coletor";
 import { useConformidade, usePode } from "@/components/topo";
-import { sessao, type Row } from "@/lib/client";
+import { NOME_ETAPA, api, fq, ls, sessao, type Row } from "@/lib/client";
 
 const MODULOS = [
-  { href: "/coletor/inventario", icone: Warehouse, nome: "Inventário", texto: "Contagem, recontagem e auditoria", rotina: "inventario" },
-  { href: "/coletor/producao", icone: Factory, nome: "Produção", texto: "Apontar o que foi produzido", rotina: "producao" },
-  { href: "/coletor/transferencia", icone: ArrowRightLeft, nome: "Transferência", texto: "Entre centros de estoque", rotina: "transferencia" },
-  { href: "/coletor/transformacao", icone: Shuffle, nome: "Transformação", texto: "CX em UN e UN em CX", rotina: "transformacao" },
-  { href: "/coletor/conferencia", icone: ClipboardCheck, nome: "Conferência", texto: "Expedição por pedido ou romaneio", rotina: "conferencia" },
-  { href: "/coletor/retorno", icone: Undo2, nome: "Retorno", texto: "Mercadoria que voltou da entrega", rotina: "retorno" },
-  { href: "/coletor/cadastro", icone: Tags, nome: "Cadastro", texto: "Dados, barras, receita e palete", rotina: "cadastro" },
-  { href: "/coletor/kit", icone: PackageOpen, nome: "Kit", texto: "Entra o kit, saem os itens", rotina: "kit" },
-  { href: "/coletor/perda", icone: PackageX, nome: "Perdas", texto: "Avaria, vencido, uso e consumo", rotina: "perda" },
+  { href: "/coletor/conferencia", icone: ClipboardCheck, nome: "Conferência", rotina: "conferencia" },
+  { href: "/coletor/inventario", icone: Warehouse, nome: "Inventário", rotina: "inventario" },
+  { href: "/coletor/producao", icone: Factory, nome: "Produção", rotina: "producao" },
+  { href: "/coletor/transferencia", icone: ArrowRightLeft, nome: "Transferência", rotina: "transferencia" },
+  { href: "/coletor/transformacao", icone: Shuffle, nome: "Transformação", rotina: "transformacao" },
+  { href: "/coletor/retorno", icone: Undo2, nome: "Retorno", rotina: "retorno" },
+  { href: "/coletor/perda", icone: PackageX, nome: "Perdas", rotina: "perda" },
+  { href: "/coletor/kit", icone: PackageOpen, nome: "Kit", rotina: "kit" },
+  { href: "/coletor/cadastro", icone: Tags, nome: "Cadastro", rotina: "cadastro" },
 ];
 
 export default function ColetorInicio() {
   const u = sessao.usuario(), conf = useConformidade(), pode = usePode(), liberados = MODULOS.filter((m) => pode([m.rotina]));
+  const cf = pode(["conferencia"]), iv = pode(["inventario"]);
+  const [abertas, setAbertas] = useState<Row[]>([]), [fila, setFila] = useState<Row[] | null>(null), [inv, setInv] = useState<Row | null>(null), [erro, setErro] = useState(""), [dia, setDia] = useState("");
+  const ler = useCallback(() => {
+    setErro("");
+    const falhou = (e: unknown) => setErro((e as Error).message === "Failed to fetch" ? "Sem conexão com o servidor." : (e as Error).message);
+    if (cf) { api<Row[]>("conferencia/minhas").then(setAbertas).catch(falhou); api<Row[]>("conferencia/fila").then((l) => setFila(l.filter((x) => !x.conferencia))).catch(falhou); }
+    if (iv) { const id = ls.get<number | null>("invId", null); if (id) api("info").then((i) => setInv(i.inventarios.find((x: Row) => x.id === id) || null)).catch(falhou); }
+  }, [cf, iv]);
+  useEffect(() => { ler(); }, [ler]);
+  useEffect(() => { const d = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); setDia(d[0].toUpperCase() + d.slice(1)); }, []);
+  const c = abertas[0];
   return (
-    <div className="min-h-dvh bg-brand-900 text-white">
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-4">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1"><div className="text-lg font-semibold">Coletor</div><div className="truncate text-sm text-brand-100/70">{u?.nome}</div></div>
-          <button onClick={sair} className="grid size-11 place-items-center bg-white/10" title="Sair" aria-label="Sair"><LogOut className="size-5" /></button>
-        </div>
-        {pode.pronto && !liberados.length && <p className="bg-white/10 p-4 text-sm">Nenhuma rotina liberada para o seu usuário. Peça a um administrador.</p>}
-        <div className="grid grid-cols-2 gap-2">
-          {liberados.map((m) => {
-            const r = conf?.rotinas?.find((x: Row) => x.id === m.rotina), bloq = r && !r.ok;
-            return (
-              <Link key={m.nome} href={m.href} className="relative flex aspect-[5/4] flex-col items-center justify-center gap-2.5 bg-white p-2 text-center text-ink active:bg-brand-100">
-                <m.icone className="size-9 text-brand-700" strokeWidth={1.75} />
-                <span className="text-[15px] font-semibold leading-tight">{m.nome}</span>
-                {bloq && <span className="absolute inset-x-0 top-0 flex items-center justify-center gap-1 bg-rose-700 py-0.5 text-[10px] font-semibold text-white"><ShieldAlert className="size-3" />Bloqueado</span>}
-              </Link>
-            );
-          })}
-        </div>
-        <div className="mt-auto space-y-3"><BotoesApp />{pode(["gestao"]) && <Link href="/" className="block py-1 text-center text-[13px] text-brand-100/60 underline underline-offset-2">Abrir a gestão</Link>}</div>
-      </div>
+    <div className="tela">
+      <Cabecalho titulo={u?.nome || "Coletor"} sub={dia} dir={<button className="ic" onClick={sair} title="Sair" aria-label="Sair"><LogOut /></button>} />
+      <main className="corpo">
+        {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
+        {c ? <Link href={`/coletor/conferencia?id=${c.id}`} className="heroi"><small>Você parou aqui</small><b>{c.pedido ? `Pedido ${c.pedido}` : `Romaneio ${c.romaneio}`}</b><small>{c.cliente}</small><div className="barra"><i style={{ width: `${c.total ? (c.feito / c.total) * 100 : 0}%` }} /></div><div className="ir">Continuar<span className="tabular">{fq(c.feito)} / {fq(c.total)}</span></div></Link>
+          : inv ? <Link href="/coletor/inventario" className="heroi"><small>Você parou aqui</small><b>{inv.descricao}</b><small>Inventário · {NOME_ETAPA[inv.etapa]}</small><div className="ir">Continuar<ChevronRight /></div></Link> : null}
+        {cf && fila && (fila.length ? <>
+          <div className="secao">Próximos pedidos</div>
+          <Link href="/coletor/conferencia" className="linha"><div><b>{fila.length} {fila.length === 1 ? "pedido esperando" : fila.length >= 300 ? "ou mais esperando" : "pedidos esperando"}</b><small>Próximo: {fila[0].pedido} · {fila[0].cliente}</small></div><ChevronRight /></Link></>
+          : !c && <div className="vazio"><Check /><b>Nada pendente</b>Nenhum pedido esperando.</div>)}
+        {pode.pronto && !liberados.length && <div className="vazio"><b>Nenhuma rotina liberada</b>Peça a um administrador.</div>}
+        {liberados.length > 0 && <div className="secao">Rotinas</div>}
+        <div className="grade">{liberados.map((m) => {
+          const r = conf?.rotinas?.find((x: Row) => x.id === m.rotina), bloq = r && !r.ok;
+          return <Link key={m.nome} href={m.href} className="modulo"><m.icone strokeWidth={1.8} />{m.nome}{bloq && <span><ShieldAlert />Bloqueado</span>}</Link>;
+        })}</div>
+        <BotoesApp />
+        {pode(["gestao"]) && <Link href="/" className="bt2">Abrir a gestão</Link>}
+      </main>
     </div>
   );
 }

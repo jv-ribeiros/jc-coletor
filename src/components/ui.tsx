@@ -109,7 +109,7 @@ export function Modal({ aberto, onClose, titulo, descricao, children, rodape, la
   }, [aberto, onClose]);
   if (!aberto) return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-start overflow-y-auto bg-slate-900/40 p-4 pt-[10vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div data-modal className="fixed inset-0 z-50 grid place-items-start overflow-y-auto bg-slate-900/40 p-4 pt-[10vh] backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={cx("anim-entra mx-auto w-full rounded-2xl bg-white shadow-2xl ring-1 ring-black/5", largura)}>
         <div className="flex items-start justify-between gap-4 px-6 pt-5">
           <div><h2 className="text-[17px] font-semibold tracking-tight">{titulo}</h2>{descricao && <p className="mt-1 text-sm text-muted">{descricao}</p>}</div>
@@ -175,7 +175,7 @@ export function Toaster({ children }: { children: React.ReactNode }) {
   return (
     <ToastCtx.Provider value={add}>
       {children}
-      <div className="no-print pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(420px,calc(100vw-2rem))] flex-col gap-2">
+      <div data-avisos className="no-print pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(420px,calc(100vw-2rem))] flex-col gap-2">
         {lista.map((t) => (
           <div key={t.id} className="anim-entra pointer-events-auto flex items-start gap-2.5 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-xl">
             {t.tipo === "ok" ? <Check className="mt-0.5 size-4 shrink-0 text-brand-200" /> : <CircleAlert className="mt-0.5 size-4 shrink-0 text-rose-300" />}

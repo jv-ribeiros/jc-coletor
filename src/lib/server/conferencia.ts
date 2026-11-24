@@ -1,4 +1,6 @@
 // Conferência de expedição por pedido (a fila pode ser aberta por romaneio), gravada nas tabelas do próprio Lieto.
+// Dois modos (Sistema › Conferência), congelados na abertura. SEPARACAO: mostra local e quantidade, quem separa já confere, recusa leitura
+// a mais e o que não tem fica como falta, esperando a gestão (encerrar ou cancelar). CEGA: não mostra nada e reconfere o que divergir:
 //   1ª contagem (cega) -> QNTCON. O que divergir vai para reconferência (cega) -> QNTREC, com NUMREC = ordem.
 //   Tudo certo: DATCON/HORCON/CODCON. Encerrar com divergência (gestão): DATENC/HORENC/CODENC.
 // Por ROMANEIO: soma por produto só os pedidos ainda não conferidos (os já conferidos, ou em conferência, ficam de fora). Batendo,
@@ -13,9 +15,21 @@ import { comConexao, consultar, emTransacao, executar, hoje, lerBlob, num, txt, 
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Ped = { pedido: number; itens: Record<string, number> };
-type Item = { codpro: string; nompro: string; unipro: string; qtd: number; codigos: string[]; fatores?: Record<string, number>; con: number; rec: number; numrec: number };
+type Item = { codpro: string; nompro: string; unipro: string; qtd: number; codigos: string[]; fatores?: Record<string, number>; con: number; rec: number; numrec: number; local?: string; falta?: boolean };
+type Modo = "CEGA" | "SEPARACAO";
+const MODOS: Modo[] = ["SEPARACAO", "CEGA"];
+export const modoAtual = (): Modo => { const v = (db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.modo'").get() as Row | undefined)?.valor; return MODOS.includes(v) ? v : "SEPARACAO"; };
+export function salvarModo(b: Row, u: Usuario) {
+  if (!MODOS.includes(b.modo)) throw new Erro("Modo de conferência inválido.");
+  db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.modo', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(b.modo);
+  evento("sistema", "conferencia", u, "ALTEROU MODO DA CONFERÊNCIA", b.modo);
+  return { modo: modoAtual() };
+}
+const separando = (c: Row) => c.modo === "SEPARACAO";
+// ordem de andar no estoque: pelo local; sem local vai para o fim
+const porLocal = (a: Item, b: Item) => Number(!a.local) - Number(!b.local) || (a.local || "").localeCompare(b.local || "", "pt-BR", { numeric: true }) || a.nompro.localeCompare(b.nompro);
 
-const abertas = () => db().prepare("SELECT id, usuario, pedido, romaneio, pedidos FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO')").all() as Row[];
+const abertas = () => db().prepare("SELECT id, codfun, usuario, cliente, pedido, romaneio, pedidos, itens, modo, aguarda_em, criado_em FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO')").all() as Row[];
 // conferência em andamento que contém o pedido (sozinho ou dentro de um romaneio)
 const abertaDe = (numped: number) => abertas().find((a) => a.pedido === numped || (a.pedidos && (JSON.parse(a.pedidos) as Ped[]).some((x) => x.pedido === numped)));
 const romaneioAberto = (rom: number) => abertas().find((a) => a.pedido == null && a.romaneio === rom);
@@ -37,16 +51,24 @@ export async function fila(q: URLSearchParams) {
       (select max(h.numide) from conferencias1 h where h.numped = a.numdoc) h from pedidos1 a left join clientes b on b.codcli = a.codcli where ${filtro} order by a.numrom desc, a.numdoc`, rom || ped ? [rom || ped] : []);
     const hs = l.map((x) => num(x.H)).filter(Boolean), est = new Map<number, string>();
     if (hs.length) for (const h of await consultar(c, `select numide, datcon, datenc from conferencias1 where numide in (${hs.join(",")})`)) est.set(num(h.NUMIDE), h.DATCON ? "CONFERIDA" : h.DATENC ? "ENCERRADA" : "ABERTA NO LIETO");
-    return l.map((x) => { const a = abertaDe(num(x.NUMDOC)); return { pedido: num(x.NUMDOC), romaneio: num(x.NUMROM), situacao: txt(x.SITDOC), data: x.DATDOC, cliente: txt(x.NOMCLI), itens: num(x.N), conferencia: a ? "EM ANDAMENTO" : est.get(num(x.H)) || "", usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : "", id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null }; });
+    return l.map((x) => { const a = abertaDe(num(x.NUMDOC)); return { pedido: num(x.NUMDOC), romaneio: num(x.NUMROM), situacao: txt(x.SITDOC), data: x.DATDOC, cliente: txt(x.NOMCLI), itens: num(x.N), conferencia: a ? (a.aguarda_em ? "AGUARDA GESTÃO" : "EM ANDAMENTO") : est.get(num(x.H)) || "", usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : "", id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null }; });
   });
 }
 
-// O coletor não recebe as quantidades do pedido (contagem cega)
+// Em andamento com este usuário ("Você parou aqui")
+export function minhas(u: Usuario) {
+  return abertas().filter((a) => a.codfun === u.codfun && !a.aguarda_em).sort((a, b) => b.id - a.id).map((a) => {
+    const it = JSON.parse(a.itens) as Item[], soma = (f: (i: Item) => number) => r4(it.reduce((s, i) => s + f(i), 0));
+    return { id: a.id, pedido: a.pedido, romaneio: a.romaneio, cliente: a.cliente, ...(separando(a) ? { feito: soma((i) => i.con), total: soma((i) => i.qtd) } : { feito: it.filter((i) => final(i) > 0).length, total: it.length }) };
+  });
+}
+
+// Na contagem cega o coletor não recebe as quantidades do pedido
 function vista(c: Row & { itens: Item[] }, gestao = false) {
-  const rec = c.status === "RECONTANDO";
-  const itens = c.itens.filter((i) => gestao || !rec || i.numrec > 0).map((i) => ({ codpro: i.codpro, nompro: i.nompro, unipro: i.unipro, codigos: i.codigos, fatores: i.fatores || {}, contado: rec ? i.rec : i.con, ...(gestao ? { qtd: i.qtd, con: i.con, rec: i.rec, numrec: i.numrec } : {}) }));
+  const rec = c.status === "RECONTANDO", sep = separando(c);
+  const itens = c.itens.filter((i) => gestao || !rec || i.numrec > 0).map((i) => ({ codpro: i.codpro, nompro: i.nompro, unipro: i.unipro, codigos: i.codigos, fatores: i.fatores || {}, contado: rec ? i.rec : i.con, ...(gestao || sep ? { qtd: i.qtd, local: i.local || "", falta: !!i.falta } : {}), ...(gestao ? { con: i.con, rec: i.rec, numrec: i.numrec } : {}) }));
   const ps = c.pedidos ? (JSON.parse(c.pedidos) as Ped[]).map((x) => x.pedido) : null;
-  return { pedidos: ps, id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, erro: c.erro, usuario: c.usuario, numide: c.numide, criado_em: c.criado_em, fim_em: c.fim_em, obs: c.obs || "", obs_fim: c.obs_fim || "", itens };
+  return { pedidos: ps, id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, modo: sep ? "SEPARACAO" : "CEGA", aguarda: !!c.aguarda_em, erro: c.erro, usuario: c.usuario, numide: c.numide, criado_em: c.criado_em, fim_em: c.fim_em, obs: c.obs || "", obs_fim: c.obs_fim || "", itens };
 }
 export const obter = (id: number, gestao: boolean) => vista(ler(id), gestao);
 
@@ -62,14 +84,14 @@ export async function abrir(b: Row, u: Usuario) {
     const h = await noLieto(c, pedido);
     if (h) throw new Erro(`Pedido já tem conferência no Lieto (nº ${num(h.NUMIDE)}, ${h.DATCON ? "conferida" : h.DATENC ? "encerrada" : "aberta"}).`);
     const ad = await adicionais(c);
-    const its = await consultar(c, "select b.codpro, max(p.nompro) nompro, max(p.unipro) unipro, max(p.codbar) codbar, max(p.coddum) coddum, max(p.eantri) eantri, sum(b.qntpro) q from pedidos2 b join produtos p on p.codpro = b.codpro where b.numdoc = ? and b.baiest = 'S' group by b.codpro order by 2", [pedido]);
+    const its = await consultar(c, "select b.codpro, max(p.nompro) nompro, max(p.unipro) unipro, max(p.codbar) codbar, max(p.coddum) coddum, max(p.eantri) eantri, max(p.locpro) locpro, sum(b.qntpro) q from pedidos2 b join produtos p on p.codpro = b.codpro where b.numdoc = ? and b.baiest = 'S' group by b.codpro order by 2", [pedido]);
     if (!its.length) throw new Erro("Pedido sem itens.");
-    return { rom: num(p.NUMROM), cli: txt(p.NOMCLI), itens: its.map((i): Item => ({ codpro: txt(i.CODPRO), nompro: txt(i.NOMPRO), unipro: txt(i.UNIPRO), qtd: r4(num(i.Q)), con: 0, rec: 0, numrec: 0,
+    return { rom: num(p.NUMROM), cli: txt(p.NOMCLI), itens: its.map((i): Item => ({ codpro: txt(i.CODPRO), nompro: txt(i.NOMPRO), unipro: txt(i.UNIPRO), qtd: r4(num(i.Q)), con: 0, rec: 0, numrec: 0, local: txt(i.LOCPRO),
       codigos: [txt(i.CODPRO), txt(i.CODBAR), txt(i.CODDUM), txt(i.EANTRI), ...cods(ad.get(txt(i.CODPRO)))].filter(Boolean), fatores: fatores(ad.get(txt(i.CODPRO))) })) };
   });
-  const ja2 = abertaDe(pedido); if (ja2) { if (ja2.pedido == null) throw new Erro(`Este pedido está na conferência do romaneio ${ja2.romaneio}.`); return obter(ja2.id, false); }
-  const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, status, codfun, usuario, criado_em) VALUES (?,?,?,?,'CONTANDO',?,?,?)").run(pedido, d.rom, d.cli, JSON.stringify(d.itens), u.codfun, u.nome, agora()).lastInsertRowid);
-  evento("conferencia", id, u, "ABRIU", { pedido });
+  const modo = modoAtual(), ja2 = abertaDe(pedido); if (ja2) { if (ja2.pedido == null) throw new Erro(`Este pedido está na conferência do romaneio ${ja2.romaneio}.`); return obter(ja2.id, false); }
+  const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, modo, status, codfun, usuario, criado_em) VALUES (?,?,?,?,?,'CONTANDO',?,?,?)").run(pedido, d.rom, d.cli, JSON.stringify(modo === "SEPARACAO" ? [...d.itens].sort(porLocal) : d.itens), modo, u.codfun, u.nome, agora()).lastInsertRowid);
+  evento("conferencia", id, u, "ABRIU", { pedido, modo });
   return obter(id, false);
 }
 
@@ -88,23 +110,23 @@ export async function abrirRomaneio(b: Row, u: Usuario) {
   if (!r.entram.length) throw new Erro(r.fora.length ? "Todos os pedidos deste romaneio já foram conferidos (ou não podem ser)." : "Romaneio sem pedidos.");
   const d = await comConexao(async (c) => {
     const ns = r.entram.map((x) => x.pedido), ad = await adicionais(c);
-    const ls = await consultar(c, `select a.numdoc, b.codpro, p.nompro, p.unipro, p.codbar, p.coddum, p.eantri, b.qntpro from pedidos1 a join pedidos2 b on b.numdoc = a.numdoc
+    const ls = await consultar(c, `select a.numdoc, b.codpro, p.nompro, p.unipro, p.codbar, p.coddum, p.eantri, p.locpro, b.qntpro from pedidos1 a join pedidos2 b on b.numdoc = a.numdoc
       join produtos p on p.codpro = b.codpro where a.numdoc in (${ns.join(",")}) and b.baiest = 'S'`);
     const ps = new Map<number, Ped>(), it = new Map<string, Item>();
     for (const x of ls) {
       const n = num(x.NUMDOC), cod = txt(x.CODPRO), q = num(x.QNTPRO);
       const pe = ps.get(n) ?? { pedido: n, itens: {} }; pe.itens[cod] = r4((pe.itens[cod] || 0) + q); ps.set(n, pe);
-      const i = it.get(cod) ?? { codpro: cod, nompro: txt(x.NOMPRO), unipro: txt(x.UNIPRO), qtd: 0, con: 0, rec: 0, numrec: 0, codigos: [cod, txt(x.CODBAR), txt(x.CODDUM), txt(x.EANTRI), ...cods(ad.get(cod))].filter(Boolean), fatores: fatores(ad.get(cod)) };
+      const i = it.get(cod) ?? { codpro: cod, nompro: txt(x.NOMPRO), unipro: txt(x.UNIPRO), qtd: 0, con: 0, rec: 0, numrec: 0, local: txt(x.LOCPRO), codigos: [cod, txt(x.CODBAR), txt(x.CODDUM), txt(x.EANTRI), ...cods(ad.get(cod))].filter(Boolean), fatores: fatores(ad.get(cod)) };
       i.qtd = r4(i.qtd + q); it.set(cod, i);
     }
     return { pedidos: [...ps.values()], itens: [...it.values()].sort((a, b) => a.nompro.localeCompare(b.nompro)) };
   });
   // daqui até o INSERT não há await: ninguém abre um destes pedidos no meio
   const ja = romaneioAberto(rom); if (ja) return obter(ja.id, false);
-  const preso = d.pedidos.find((x) => abertaDe(x.pedido));
+  const modo = modoAtual(), preso = d.pedidos.find((x) => abertaDe(x.pedido));
   if (preso) throw new Erro(`O pedido ${preso.pedido} acabou de entrar em conferência. Abra o romaneio de novo.`, 409);
-  const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, pedidos, status, codfun, usuario, criado_em) VALUES (NULL,?,?,?,?,'CONTANDO',?,?,?)")
-    .run(rom, `${d.pedidos.length} pedido(s)${r.fora.length ? `, ${r.fora.length} fora` : ""}`, JSON.stringify(d.itens), JSON.stringify(d.pedidos), u.codfun, u.nome, agora()).lastInsertRowid);
+  const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, pedidos, modo, status, codfun, usuario, criado_em) VALUES (NULL,?,?,?,?,?,'CONTANDO',?,?,?)")
+    .run(rom, `${d.pedidos.length} pedido(s)${r.fora.length ? `, ${r.fora.length} fora` : ""}`, JSON.stringify(modo === "SEPARACAO" ? [...d.itens].sort(porLocal) : d.itens), JSON.stringify(d.pedidos), modo, u.codfun, u.nome, agora()).lastInsertRowid);
   evento("conferencia", id, u, "ABRIU ROMANEIO", { romaneio: rom, pedidos: d.pedidos.map((x) => x.pedido), fora: r.fora.map((x) => x.pedido) });
   return obter(id, false);
 }
@@ -116,15 +138,37 @@ export function contar(id: number, b: Row, u: Usuario) {
   const uid = String(b.uid || "").slice(0, 40), cod = chave(b.codigo), q = r4(b.qtd), rec = c.status === "RECONTANDO";
   if (!uid) throw new Erro("Leitura sem identificador.");
   if (db().prepare("SELECT 1 FROM conf_leituras WHERE uid = ?").get(uid)) return vista(c);
+  if (c.aguarda_em) throw new Erro("Este pedido está esperando a gestão.");
   if (!Number.isFinite(q) || q < 0 || q > 999999 || (b.modo !== "fixa" && q <= 0)) throw new Erro("Quantidade inválida.");
   const i = c.itens.find((x) => x.codigos.some((y) => chave(y) === cod));
   if (!i) throw new Erro("Este produto não é deste pedido.");
   if (rec && !(i.numrec > 0)) throw new Erro(`${i.nompro} já está certo: não precisa reconferir.`);
-  const k = rec ? "rec" : "con";
-  i[k] = b.modo === "fixa" ? q : r4(i[k] + q);
+  const k = rec ? "rec" : "con", novo = b.modo === "fixa" ? q : r4(i[k] + q);
+  if (separando(c)) { if (novo > i.qtd) throw new Erro(`Passa do pedido: são ${i.qtd.toLocaleString("pt-BR")} ${i.unipro}.`); i.falta = false; }
+  i[k] = novo;
   db().prepare("INSERT INTO conf_leituras (uid, conf_id, codpro, qtd, modo, usuario, em) VALUES (?,?,?,?,?,?,?)").run(uid, id, i.codpro, q, b.modo === "fixa" ? "FIXA" : "SOMA", u.nome, agora());
   gravarItens(id, c.itens, c.status);
   return vista(c);
+}
+
+// Com separação: "não tem" (o que já foi pego fica contado) e voltar a separar antes de a gestão decidir
+export function falta(id: number, b: Row, u: Usuario) {
+  const c = ler(id), i = c.itens.find((x) => x.codpro === String(b.codpro || ""));
+  if (c.status !== "CONTANDO" || c.aguarda_em || !separando(c)) throw new Erro("Só vale na separação em andamento.");
+  if (!i) throw new Erro("Este produto não é deste pedido.");
+  i.falta = i.con < i.qtd;
+  gravarItens(id, c.itens, c.status);
+  evento("conferencia", id, u, "NÃO TEM", { codpro: i.codpro, pego: i.con, pedido: i.qtd });
+  return vista(ler(id));
+}
+export function voltar(id: number, u: Usuario) {
+  const c = ler(id);
+  if (c.status !== "CONTANDO" || !c.aguarda_em || emAndamento.has(id)) throw new Erro("Este pedido não está esperando a gestão.");
+  for (const i of c.itens) i.falta = false;
+  gravarItens(id, c.itens, c.status);
+  db().prepare("UPDATE conferencias SET aguarda_em = NULL WHERE id = ?").run(id);
+  evento("conferencia", id, u, "VOLTOU A SEPARAR");
+  return obter(id, false);
 }
 
 const emAndamento = new Set<number>();
@@ -132,8 +176,16 @@ const emAndamento = new Set<number>();
 export async function fechar(id: number, u: Usuario, obs?: unknown) {
   const c = ler(id);
   if (!["CONTANDO", "RECONTANDO"].includes(c.status)) throw new Erro("Conferência já finalizada.");
+  if (c.aguarda_em) throw new Erro("Este pedido está esperando a gestão.");
   guardarObs(id, "obs", obs);
   const div = c.itens.filter((i) => final(i) !== i.qtd);
+  if (div.length && separando(c)) {
+    const sem = div.filter((i) => !i.falta).length;
+    if (sem) throw new Erro(`Falta separar ${sem} item(ns).`);
+    db().prepare("UPDATE conferencias SET aguarda_em = ? WHERE id = ?").run(agora(), id);
+    evento("conferencia", id, u, "CONCLUIU COM FALTA", div.map((i) => `${i.codpro}: ${i.con} de ${i.qtd}`).join(", "));
+    return { ...obter(id, false), divergentes: div.length };
+  }
   if (div.length) {
     const primeira = c.status === "CONTANDO"; let n = 0;
     if (primeira) for (const i of div) i.numrec = ++n;
@@ -232,5 +284,5 @@ export async function cancelar(id: number, u: Usuario, obs?: unknown) {
 }
 export const listar = () => (db().prepare("SELECT * FROM conferencias ORDER BY id DESC LIMIT 1000").all() as Row[]).map((c) => {
   const it = JSON.parse(c.itens) as Item[];
-  return { id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, usuario: c.usuario, criado_em: c.criado_em, fim_em: c.fim_em, numide: c.numide, erro: c.erro, pedidos: c.pedidos ? (JSON.parse(c.pedidos) as Ped[]).length : 1, itens: it.length, divergentes: it.filter((i) => final(i) !== i.qtd).length };
+  return { id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, modo: c.modo || "CEGA", aguarda: !!c.aguarda_em, usuario: c.usuario, criado_em: c.criado_em, fim_em: c.fim_em, numide: c.numide, erro: c.erro, pedidos: c.pedidos ? (JSON.parse(c.pedidos) as Ped[]).length : 1, itens: it.length, divergentes: it.filter((i) => final(i) !== i.qtd).length };
 });

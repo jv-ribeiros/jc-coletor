@@ -205,6 +205,11 @@ const rotas: [string, string, Handler][] = [
   // ---------- conferência de expedição ----------
   ["GET", "conferencia/fila", ({ q }) => CF.fila(q)],
   ["GET", "conferencia", () => CF.listar()],
+  ["GET", "conferencia/minhas", ({ usuario }) => CF.minhas(usuario!)],
+  ["POST", "conferencia/:id/falta", ({ p, body, usuario }) => CF.falta(Number(p[0]), body, usuario!)],
+  ["POST", "conferencia/:id/voltar", ({ p, usuario }) => CF.voltar(Number(p[0]), usuario!)],
+  ["GET", "sistema/conferencia", () => ({ modo: CF.modoAtual() })],
+  ["POST", "sistema/conferencia", ({ body, usuario }) => { exigirAdmin(usuario); return CF.salvarModo(body, usuario!); }],
   ["GET", "conferencia/romaneio/:n", ({ p }) => CF.romaneio(Number(p[0]))],
   ["POST", "conferencia/romaneio", ({ body, usuario }) => CF.abrirRomaneio(body, usuario!)],
   ["GET", "conferencia/:id", ({ p }) => CF.obter(Number(p[0]), false)],
