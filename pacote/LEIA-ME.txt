@@ -3,6 +3,7 @@
 3. Informe o banco do Lieto, a senha e os administradores. O instalador so consulta o banco.
 4. Servico: responda S para rodar sem ninguem logado, com o seu usuario e a senha do Windows (nao o PIN).
    Para fazer depois, ou quando a senha mudar: servico\instalar-servico.bat. Para tirar: servico\remover-servico.bat.
+   Pasta de rede que pede usuario e senha: servico\acesso-rede.bat.
    Registro do servico: logs\servico.log. Em pasta de rede, prefira \\servidor\pasta em vez de Z:.
 5. HTTPS: responda S no fim, ou rode depois https\instalar-https.bat (o Caddy ja vem junto).
 6. Entre em http://IP-DO-SERVIDOR:3090 com um administrador.

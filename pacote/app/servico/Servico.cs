@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.ServiceProcess;
 using System.Text;
 using System.Threading;
@@ -44,6 +45,7 @@ public class JCColetor : ServiceBase
     void Rodar()
     {
         Log("Servico iniciado por " + Environment.UserDomainName + "\\" + Environment.UserName);
+        Acessos();
         Unidades();
         while (!parando)
         {
@@ -66,6 +68,33 @@ public class JCColetor : ServiceBase
         }
     }
 
+    // Computadores da rede com usuario e senha guardados pelo acesso-rede.bat (criptografados para este usuario).
+    void Acessos()
+    {
+        string d = Path.Combine(raiz, "servico", "rede");
+        if (!Directory.Exists(d)) return;
+        foreach (string f in Directory.GetFiles(d, "*.bin"))
+        {
+            string srv = Path.GetFileNameWithoutExtension(f);
+            try
+            {
+                string[] v = Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(f), null, DataProtectionScope.CurrentUser)).Split(new[] { '\n' }, 2);
+                for (int t = 1; t <= 6 && !parando; t++)
+                {
+                    var r = new NETRESOURCE { dwType = 0, lpRemoteName = "\\\\" + srv + "\\IPC$" };
+                    int cod = WNetAddConnection2(ref r, v[1], v[0], 0);
+                    if (cod == 0 || cod == 1219) { Log("Rede " + srv + ": acesso aberto com " + v[0] + (cod == 1219 ? " (ja havia conexao)" : "")); break; }
+                    Log("Rede " + srv + ": nao abriu: " + new System.ComponentModel.Win32Exception(cod).Message);
+                    if (!RedeSubindo(cod)) break;
+                    for (int n = 0; n < 50 && !parando; n++) Thread.Sleep(100);
+                }
+            }
+            catch (Exception e) { Log("Rede " + srv + ": " + e.Message); }
+        }
+    }
+    // rede ainda subindo apos ligar o servidor: tenta de novo. Senha/acesso negado nao adianta (e pode bloquear a conta).
+    static bool RedeSubindo(int c) { return c == 53 || c == 67 || c == 64 || c == 1203 || c == 1222 || c == 1231; }
+
     // Servico nao enxerga as unidades mapeadas (Z:) da area de trabalho: refaz as do usuario nesta sessao.
     void Unidades()
     {
@@ -85,8 +114,7 @@ public class JCColetor : ServiceBase
                             int cod = WNetAddConnection2(ref r, null, null, 0);
                             if (cod == 0 || cod == 85) { Log("Unidade " + l + ": = " + destino); break; }
                             Log("Unidade " + l + ": (" + destino + ") nao abriu: " + new System.ComponentModel.Win32Exception(cod).Message);
-                            // rede ainda subindo apos ligar o servidor: tenta de novo. Senha/acesso negado nao adianta (e pode bloquear a conta).
-                            if (cod != 53 && cod != 67 && cod != 64 && cod != 1203 && cod != 1222 && cod != 1231) break;
+                            if (!RedeSubindo(cod)) break;
                             for (int n = 0; n < 50 && !parando; n++) Thread.Sleep(100);
                         }
                     }

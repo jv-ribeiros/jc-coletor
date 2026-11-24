@@ -120,7 +120,7 @@ function Pastas({ s, admin, ler }: { s: Row; admin: boolean; ler: () => void }) 
         <div key={x.pasta} className="flex flex-wrap items-center gap-3 border-b border-line pb-2"><span className="min-w-0 flex-1 break-all font-medium">{x.pasta}<span className={"block text-[12px] " + (x.erro ? "text-rose-700" : "text-muted")}>{x.erro || (x.lida ? `Vigiando com as subpastas · última leitura ${fdata(x.lida)}` : "Aguardando a primeira leitura")}</span></span>
           {admin && <Button size="sm" variant="ghost" onClick={() => salvar(s.pastas.map((y: Row) => y.pasta).filter((y: string) => y !== x.pasta))}>Remover</Button>}</div>
       ))}
-      <div className="flex flex-wrap gap-2"><input className={inputCls + " min-w-[260px] flex-1"} disabled={!admin} placeholder="Ex.: D:\\XML Marketplace" value={p} onChange={(e) => setP(e.target.value)} />
+      <div className="flex flex-wrap gap-2"><input className={inputCls + " min-w-[260px] flex-1"} disabled={!admin} placeholder="Ex.: D:\XML ou \\servidor\pasta" value={p} onChange={(e) => setP(e.target.value)} />
         <Button variant="secondary" disabled={!admin} onClick={() => setNav(true)}>Procurar…</Button><Button disabled={!admin || !p.trim()} onClick={() => adicionar(p)}>Adicionar pasta</Button></div>
       {nav && <Navegador inicio={p} fechar={() => setNav(false)} escolher={(x) => { setNav(false); adicionar(x); }} />}
     </Card>
@@ -195,9 +195,9 @@ function Navegador({ inicio, fechar, escolher }: { inicio: string; fechar: () =>
   const ir = useCallback((p: string) => api(`xml/pastas?p=${encodeURIComponent(p)}`).then(setD).catch((e) => { toast(e.message, "erro"); if (p) api("xml/pastas").then(setD).catch(() => {}); }), [toast]);
   useEffect(() => { ir(inicio); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Modal aberto onClose={fechar} titulo="Escolha a pasta" descricao="São as pastas do computador onde este sistema está rodando." largura="max-w-xl"
+    <Modal aberto onClose={fechar} titulo="Escolha a pasta" descricao="Pastas do servidor e da rede. Para outro computador, digite \\servidor antes de procurar." largura="max-w-xl"
       rodape={<><Button variant="secondary" onClick={fechar}>Cancelar</Button><Button disabled={!d?.atual} onClick={() => escolher(d!.atual)}>Usar esta pasta</Button></>}>
-      <div className="text-sm"><b>{d?.atual || "Discos"}</b>{d?.atual && <span className="text-muted"> · {d.xmls} XML aqui</span>}</div>
+      <div className="text-sm"><b>{d?.atual || "Discos e rede"}</b>{d?.atual && <span className="text-muted"> · {d.xmls} XML aqui</span>}</div>
       <div className="mt-2 max-h-80 overflow-y-auto rounded-lg ring-1 ring-line">
         {d?.acima != null && <button className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => ir(d.acima)}>↑ Voltar</button>}
         {d?.pastas.map((x: string) => <button key={x} className="block w-full border-t border-line px-3 py-2 text-left text-sm hover:bg-slate-50" onClick={() => ir(x)}>📁 {x.split("\\").filter(Boolean).pop()}</button>)}

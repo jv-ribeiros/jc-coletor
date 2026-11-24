@@ -16,3 +16,4 @@ design/
 *.log
 *.db*
 .env*
+servico/rede/

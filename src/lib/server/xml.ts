@@ -3,6 +3,7 @@
 // Depois de importado, o arquivo sai da pasta vigiada para <config.xml.importadas>/AAAA-MM (mês de emissão).
 // Produto NUNCA é casado só pelo código do XML (cProd): o código é de quem emitiu e pode coincidir com outro produto do Lieto.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { marco } from "./auditoria";
 import { db, getConfig } from "./db";
@@ -110,8 +111,10 @@ export function definirPastas(l: unknown, u: Usuario) {
   for (const x of Array.isArray(l) ? l : []) {
     const d = String(x || "").trim();
     if (!d) continue;
-    if (!path.isAbsolute(d) || !fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Erro("Pasta não encontrada neste servidor: " + d);
+    if (!path.isAbsolute(d)) throw new Erro("Informe o caminho completo, ex.: C:\\XML ou \\\\servidor\\pasta.");
     const n = path.resolve(d);
+    // as que já estavam não são testadas de novo: uma fora do ar não pode impedir de mexer nas outras
+    if (!pastas().some((y) => igual(y, n))) try { fs.readdirSync(d); } catch (e) { throw new Erro(porQue(d, e)); }
     if (!ps.some((y) => y.toLowerCase() === n.toLowerCase())) ps.push(n);
   }
   db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('xml.pastas', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(JSON.stringify(ps));
@@ -125,14 +128,44 @@ const g = globalThis as unknown as { __xmlLimpo?: boolean; __xmlRodando?: boolea
 export const marcar = () => { g.__xmlLimpo = false; };
 export const consumirMarca = () => { const s = !g.__xmlLimpo; g.__xmlLimpo = true; return s; };
 
-// Navegação de pastas do servidor (só administrador). Sem caminho: lista os discos.
-export function navegar(p: string) {
+// Motivo real de a pasta não abrir. O Node devolve UNKNOWN quando a rede recusa usuário e senha.
+export function porQue(d: string, e: unknown) {
+  const c = (e as NodeJS.ErrnoException).code || "", rede = d.startsWith("\\\\"), srv = d.split("\\").filter(Boolean)[0], quem = os.userInfo().username;
+  if (rede && ["UNKNOWN", "EACCES", "EPERM"].includes(c)) return `${srv} não abriu para o usuário ${quem}: ${d}. Ou ele recusou o usuário e a senha, ou o nome do computador está errado. No servidor, rode servico\\acesso-rede.bat e informe o usuário e a senha de ${srv}.`;
+  if (c === "EACCES" || c === "EPERM") return `O usuário ${quem} não tem permissão nesta pasta: ${d}`;
+  if (c === "ENOENT" && /^[a-z]:/i.test(d) && !fs.existsSync(d.slice(0, 3))) return `O disco ${d.slice(0, 2)} não existe para o usuário ${quem}. Se for unidade de rede, use \\\\servidor\\pasta.`;
+  if (c === "ENOTDIR") return "Isto não é uma pasta: " + d;
+  return c === "ENOENT" ? (rede ? `Não achei na rede: ${d}. Confira o nome do computador e da pasta.` : "Pasta não encontrada neste servidor: " + d) : `Não consegui abrir ${d}: ${(e as Error).message}`;
+}
+
+const rodar = (exe: string, args: string[]) => new Promise<string>((ok) => {
+  const { execFile } = process.getBuiltinModule("node:child_process") as typeof import("node:child_process");
+  execFile(exe, args, { timeout: 15_000, windowsHide: true, encoding: "utf8" }, (_e, saida) => ok(String(saida || "")));
+});
+// Lugares de rede conhecidos deste usuário: unidades mapeadas e computadores com acesso guardado (servico\rede)
+async function lugaresDeRede(): Promise<string[]> {
+  const l = new Set<string>();
+  for (const m of (await rodar("reg.exe", ["query", "HKCU\\Network", "/s", "/v", "RemotePath"])).matchAll(/RemotePath\s+REG_\w+\s+(\\\\.+)/g)) l.add(m[1].trim());
+  try { for (const f of fs.readdirSync(path.join(process.cwd(), "servico", "rede"))) if (f.endsWith(".bin")) l.add("\\\\" + f.slice(0, -4)); } catch { /* nenhum */ }
+  for (const p of pastas()) if (p.startsWith("\\\\")) l.add("\\\\" + p.split("\\").filter(Boolean)[0]);
+  return [...l];
+}
+
+// Navegação de pastas do servidor (só administrador). Sem caminho: discos e lugares de rede. \\servidor: as pastas compartilhadas dele.
+export async function navegar(p: string) {
   const d = String(p || "").trim();
-  if (!d) return { atual: "", acima: null, pastas: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((l) => l + ":\\").filter((x) => fs.existsSync(x)), xmls: 0 };
-  if (!path.isAbsolute(d)) throw new Erro("Informe o caminho completo, ex.: C:\\XML.");
+  if (!d) return { atual: "", acima: null, pastas: [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((l) => l + ":\\").filter((x) => fs.existsSync(x)), ...(await lugaresDeRede())], xmls: 0 };
+  if (!path.isAbsolute(d)) throw new Erro("Informe o caminho completo, ex.: C:\\XML ou \\\\servidor\\pasta.");
+  const srv = /^\\\\([A-Za-z0-9._-]+)\\?$/.exec(d)?.[1];
+  if (srv) {
+    const linhas = (await rodar("cmd.exe", ["/d", "/c", `chcp 65001>nul & net view \\\\${srv}`])).split(/\r?\n/), i = linhas.findIndex((x) => /^-{10,}/.test(x));
+    const cs = i < 0 ? [] : linhas.slice(i + 1).map((x) => /^(.+?)\s{2,}(?:Disco|Disk)\b/i.exec(x)?.[1]?.trim()).filter((x): x is string => !!x);
+    if (!cs.length) throw new Erro(`${srv} não mostrou as pastas para o usuário ${os.userInfo().username}. No servidor, rode servico\\acesso-rede.bat, ou digite o caminho completo \\\\${srv}\\pasta.`);
+    return { atual: "", acima: "", pastas: cs.map((x) => `\\\\${srv}\\${x}`), xmls: 0 };
+  }
   let l: fs.Dirent[];
-  try { l = fs.readdirSync(d, { withFileTypes: true }); } catch { throw new Erro("Não consegui abrir a pasta: " + d); }
-  const acima = path.dirname(d);
+  try { l = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { throw new Erro(porQue(d, e)); }
+  const raizRede = /^(\\\\[^\\]+)\\[^\\]+\\?$/.exec(d)?.[1], acima = raizRede || path.dirname(d);
   return { atual: d, acima: acima === d ? "" : acima, pastas: l.filter((x) => x.isDirectory() && !x.name.startsWith("$")).map((x) => path.join(d, x.name)).sort((a, b) => a.localeCompare(b)).slice(0, 500), xmls: l.filter((x) => x.isFile() && /\.xml$/i.test(x.name)).length };
 }
 
@@ -216,7 +249,7 @@ export async function varrer() {
         }
         est.lidas[d] = agora();
         if (erros.length) est.erros[d] = `${erros.length} subpasta(s) não abriram. ${erros[0]}`; else delete est.erros[d];
-      } catch (e) { est.erros[d] = (e as Error).message; } // uma pasta fora do ar não para as outras
+      } catch (e) { est.erros[d] = porQue(d, e); } // uma pasta fora do ar não para as outras
     }
   } finally { g.__xmlRodando = false; }
 }

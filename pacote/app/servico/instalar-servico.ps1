@@ -74,7 +74,7 @@ public static class JcConta {
     }
     Stop-Sistema; Remove-Servico
     Remove-Item $exe -Force -ErrorAction SilentlyContinue
-    Add-Type -Path (Join-Path $PSScriptRoot 'Servico.cs') -OutputAssembly $exe -OutputType ConsoleApplication -ReferencedAssemblies System.ServiceProcess
+    Add-Type -Path (Join-Path $PSScriptRoot 'Servico.cs') -OutputAssembly $exe -OutputType ConsoleApplication -ReferencedAssemblies System.ServiceProcess, System.Security
     # o usuario precisa gravar em data, logs, config e homologacao
     & icacls $raiz /grant "*${sid}:(OI)(CI)M" /Q | Out-Null
     if ($LASTEXITCODE) { throw "Nao foi possivel liberar a pasta $raiz para $u." }

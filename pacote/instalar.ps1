@@ -70,7 +70,11 @@ try {
   # abre sozinho quando alguem entra no Windows (com o servico instalado, quem abre e o servico)
   $w = New-Object -ComObject WScript.Shell
   foreach ($p in $(if ($sv) { 'CommonDesktopDirectory' } else { 'CommonStartup', 'CommonDesktopDirectory' })) { $l = $w.CreateShortcut((Join-Path ([Environment]::GetFolderPath($p)) 'Operacoes Lieto.lnk')); $l.TargetPath = "$Destino\iniciar.bat"; $l.WorkingDirectory = $Destino; $l.Save() }
-  if ($sv) { Start-Service JCColetor; $sv = $null; $comServico = $true }
+  if ($sv) {
+    Remove-Item "$Destino\servico\JCColetor.exe" -Force
+    Add-Type -Path "$Destino\servico\Servico.cs" -OutputAssembly "$Destino\servico\JCColetor.exe" -OutputType ConsoleApplication -ReferencedAssemblies System.ServiceProcess, System.Security
+    Start-Service JCColetor; $sv = $null; $comServico = $true
+  }
   elseif ((Read-Host 'Deixar como servico, rodando sem ninguem logado? (S/N) [S]') -notmatch '^[nN]') { & "$Destino\servico\instalar-servico.ps1" -SemPausa; $comServico = $global:ServicoOk -or (Get-Service JCColetor -ErrorAction SilentlyContinue) }
   if (-not $comServico) { Start-Process explorer.exe "`"$Destino\iniciar.bat`"" }
   Write-Host ''; Write-Host "Instalado em $Destino" -ForegroundColor Green
