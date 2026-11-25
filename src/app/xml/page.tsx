@@ -51,7 +51,7 @@ function Notas({ s, admin, mudou }: { s: Row; admin: boolean; mudou: () => void 
   const filtros: [string, string][] = [["", "Todas"], ["PENDENTE", "Pendentes"], ["ERRO", "Com erro"], ["IMPORTADA", "Importadas"], ["CANCELADA", "Canceladas"]];
   return (
     <>
-      {s.falhas.length > 0 && <Card className="mt-4 max-h-40 overflow-y-auto p-4 text-[13px]"><b>Arquivos recusados ({s.falhas.length})</b>{s.falhas.map((f: Row) => <div key={f.arquivo} className="text-rose-700">{f.arquivo}: {f.erro}</div>)}</Card>}
+      {s.falhas.length > 0 && <Card className="mt-4 max-h-40 overflow-y-auto p-4 text-[13px]"><b>Arquivos com problema ({s.falhas.length})</b>{s.falhas.map((f: Row) => <div key={f.arquivo} className="text-rose-700">{f.arquivo}: {f.erro}</div>)}</Card>}
       <Card className="mt-4">
         <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
           <input className={inputCls + " min-w-[220px] flex-1"} placeholder="Número, pedido, comprador, CPF, produto…" value={b} onChange={(e) => setB(e.target.value)} />
@@ -117,7 +117,7 @@ function Pastas({ s, admin, ler }: { s: Row; admin: boolean; ler: () => void }) 
       <b>Pastas onde vocês salvam os XMLs</b>
       {!admin && <p className="text-rose-700">Só administrador (config.json › admins) altera as pastas e os canais.</p>}
       {s.pastas.map((x: Row) => (
-        <div key={x.pasta} className="flex flex-wrap items-center gap-3 border-b border-line pb-2"><span className="min-w-0 flex-1 break-all font-medium">{x.pasta}<span className={"block text-[12px] " + (x.erro ? "text-rose-700" : "text-muted")}>{x.erro || (x.lida ? `Vigiando com as subpastas · última leitura ${fdata(x.lida)}` : "Aguardando a primeira leitura")}</span>{x.presos > 0 && <span className="block text-[12px] text-amber-700">{x.presos} nota(s) importada(s) e guardada(s), mas o original ficou aqui: sem permissão para apagar nesta pasta.</span>}</span>
+        <div key={x.pasta} className="flex flex-wrap items-center gap-3 border-b border-line pb-2"><span className="min-w-0 flex-1 break-all font-medium">{x.pasta}<span className={"block text-[12px] " + (x.erro ? "text-rose-700" : "text-muted")}>{x.erro || (x.lida ? `Vigiando com as subpastas · última leitura ${fdata(x.lida)}` : "Aguardando a primeira leitura")}</span></span>
           {admin && <Button size="sm" variant="ghost" onClick={() => salvar(s.pastas.map((y: Row) => y.pasta).filter((y: string) => y !== x.pasta))}>Remover</Button>}</div>
       ))}
       <div className="flex flex-wrap gap-2"><input className={inputCls + " min-w-[260px] flex-1"} disabled={!admin} placeholder="Ex.: D:\XML ou \\servidor\pasta" value={p} onChange={(e) => setP(e.target.value)} />

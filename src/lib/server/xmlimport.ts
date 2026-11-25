@@ -221,7 +221,7 @@ async function importarAgora(chave: string, u: Usuario): Promise<Row> {
 function concluir(chave: string, pedido: number, u: Usuario, acao: string) {
   db().prepare("UPDATE xmls SET status = 'IMPORTADA', erro = NULL, pedido = ?, importado_em = ? WHERE chave = ?").run(pedido, agora(), chave);
   evento("xml", chave, u, acao, { pedido });
-  try { X.arquivar(chave); } catch (e) { evento("xml", chave, u, "IMPORTOU, MAS NÃO MOVEU O ARQUIVO", (e as Error).message); console.error("[XML] arquivo:", (e as Error).message); }
+  try { X.arquivar(chave); } catch (e) { evento("xml", chave, u, "IMPORTOU, MAS NÃO COPIOU O ARQUIVO", (e as Error).message); console.error("[XML] arquivo:", (e as Error).message); }
   return { status: "IMPORTADA", pedido };
 }
 

@@ -1,6 +1,6 @@
 // Importação de XML de venda (NF-e emitida fora do Lieto com o CNPJ da empresa).
 // Vigia a pasta e as subpastas, lê, valida e concilia produtos (a gravação no Lieto fica em xmlimport.ts).
-// Depois de importado, o arquivo sai da pasta vigiada para <config.xml.importadas>/AAAA-MM (mês de emissão).
+// Depois de importado, o arquivo é COPIADO (o original nunca é apagado nem movido) para <config.xml.importadas>/AAAA-MM (mês de emissão).
 // Produto NUNCA é casado só pelo código do XML (cProd): o código é de quem emitiu e pode coincidir com outro produto do Lieto.
 import fs from "node:fs";
 import os from "node:os";
@@ -118,13 +118,13 @@ export function definirPastas(l: unknown, u: Usuario) {
     if (!ps.some((y) => y.toLowerCase() === n.toLowerCase())) ps.push(n);
   }
   db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('xml.pastas', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(JSON.stringify(ps));
-  vistos.clear(); presos.clear(); est.falhas = []; est.erros = {}; est.lidas = {};
+  vistos.clear(); est.falhas = []; est.erros = {}; est.lidas = {};
   evento("xml", "pasta", u, "DEFINIU PASTAS", ps.join(" ; ") || "(nenhuma)");
 }
 
 // marca de "há algo novo para importar"
 // (no globalThis: o Next carrega este módulo mais de uma vez no mesmo processo, na API e no agendador)
-const g = globalThis as unknown as { __xmlLimpo?: boolean; __xmlRodando?: boolean; __xmlVistos?: Map<string, string>; __xmlPastas?: { falhas: Falha[]; lidas: Record<string, string>; erros: Record<string, string> }; __xmlPresos?: Map<string, string> };
+const g = globalThis as unknown as { __xmlLimpo?: boolean; __xmlRodando?: boolean; __xmlVistos?: Map<string, string>; __xmlPastas?: { falhas: Falha[]; lidas: Record<string, string>; erros: Record<string, string> } };
 export const marcar = () => { g.__xmlLimpo = false; };
 export const consumirMarca = () => { const s = !g.__xmlLimpo; g.__xmlLimpo = true; return s; };
 
@@ -169,13 +169,12 @@ export async function navegar(p: string) {
   return { atual: d, acima: acima === d ? "" : acima, pastas: l.filter((x) => x.isDirectory() && !x.name.startsWith("$")).map((x) => path.join(d, x.name)).sort((a, b) => a.localeCompare(b)).slice(0, 500), xmls: l.filter((x) => x.isFile() && /\.xml$/i.test(x.name)).length };
 }
 
-// Guarda o XML importado em Importadas/AAAA-MM: copia, confere o conteúdo e só então remove o original da pasta vigiada.
+// Copia o XML importado para Importadas/AAAA-MM e confere a cópia. O original NUNCA é apagado, movido ou alterado.
 // Falhar aqui não desfaz a importação: a próxima leitura da pasta tenta de novo.
 export function arquivar(chave: string, origem?: string) {
   const base = getConfig().xml?.importadas, x = db().prepare("SELECT arquivo, conteudo, emissao, status, arquivado FROM xmls WHERE chave = ?").get(chave) as Row | undefined;
   if (!base || !x || x.status !== "IMPORTADA") return;
-  // a pasta já recusou apagar e esta nota já está guardada: não relê tudo pela rede
-  if (origem && x.arquivado && presos.size && [...presos.values()].includes(raizDe(origem)) && fs.existsSync(x.arquivado)) { presos.set(origem, raizDe(origem)); return; }
+  if (x.arquivado && fs.existsSync(x.arquivado)) return; // já tem cópia
   const arq = String(origem || x.arquivo || ""), vigiada = path.isAbsolute(arq) && pastas().some((p) => dentro(p, arq)) && !(dentro(base, arq) && !pastas().some((p) => igual(p, base) || dentro(base, p)));
   const dir = path.join(base, String(x.emissao).slice(0, 7));
   fs.mkdirSync(dir, { recursive: true });
@@ -185,18 +184,11 @@ export function arquivar(chave: string, origem?: string) {
   if (vigiada && fs.existsSync(arq)) {
     dados = fs.readFileSync(arq);
     const r = ler(decodificar(dados));
-    if (r.tipo !== "nota" || r.nota.chave !== chave) throw new Erro("O arquivo na pasta não é mais esta nota: não foi movido.");
+    if (r.tipo !== "nota" || r.nota.chave !== chave) throw new Erro("O arquivo na pasta não é mais esta nota: não foi copiado.");
   }
   if (fs.existsSync(destino) && !fs.readFileSync(destino).equals(dados)) destino = path.join(dir, `${chave}-nfe.xml`); // mesmo nome, outro conteúdo
   if (!fs.existsSync(destino)) fs.writeFileSync(destino, dados, { flag: "wx" });
-  if (!fs.readFileSync(destino).equals(dados)) throw new Erro("Cópia do XML não confere: o original foi mantido.");
-  if (vigiada && fs.existsSync(arq) && !mesmoLugar(arq, destino)) { // nunca apaga a própria cópia
-    try { fs.unlinkSync(arq); presos.delete(arq); }
-    catch (e) { // sem permissão de apagar na pasta: a nota está importada e guardada, só o original fica lá. Tenta de novo quando o sistema reabrir.
-      if (!["EPERM", "EACCES", "EROFS"].includes((e as NodeJS.ErrnoException).code || "")) throw e;
-      presos.set(arq, raizDe(arq));
-    }
-  }
+  if (!fs.readFileSync(destino).equals(dados)) throw new Erro("Cópia do XML não confere.");
   db().prepare("UPDATE xmls SET arquivado = ? WHERE chave = ?").run(destino, chave);
 }
 
@@ -217,8 +209,6 @@ export function receber(arquivo: string, conteudo: string) {
 
 const vistos = (g.__xmlVistos ??= new Map<string, string>()); // arquivo -> tamanho:data já processado
 const est = (g.__xmlPastas ??= { falhas: [], lidas: {}, erros: {} });
-const presos = (g.__xmlPresos ??= new Map<string, string>()); // arquivo importado que a pasta não deixou apagar -> pasta vigiada
-const raizDe = (arq: string) => pastas().find((p) => dentro(p, arq)) || "";
 const igual = (a: string, b: string) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 const dentro = (raiz: string, arq: string) => { const r = path.relative(path.resolve(raiz).toLowerCase(), path.resolve(arq).toLowerCase()); return !!r && r !== ".." && !r.startsWith(".." + path.sep) && !path.isAbsolute(r); };
 // O mesmo lugar pode ter dois nomes (Z: e \servidor, nome curto): compara a identidade no disco. Sem identidade = trata como o mesmo, que é o lado seguro (não apaga).
@@ -254,7 +244,7 @@ export async function varrer() {
             est.falhas = est.falhas.filter((x) => x.arquivo !== arq);
             if (st.size > MAX) throw new Erro("Arquivo maior que 5 MB.");
             const r = receber(arq, decodificar(await fs.promises.readFile(arq)));
-            if (!r.cancelamento && r.repetido) arquivar(r.chave, arq); // já importada: só guarda o arquivo
+            if (!r.cancelamento && r.repetido) arquivar(r.chave, arq); // já importada: só garante a cópia
           } catch (e) { if (!(e instanceof Erro)) vistos.delete(arq); est.falhas = [{ arquivo: arq, erro: (e as Error).message, em: agora() }, ...est.falhas.filter((x) => x.arquivo !== arq)].slice(0, 200); }
         }
         est.lidas[d] = agora();
@@ -267,7 +257,7 @@ export async function varrer() {
 // ---------- telas ----------
 export function situacao() {
   const c = Object.fromEntries((db().prepare("SELECT COALESCE(status, 'PENDENTE') s, COUNT(*) n FROM xmls GROUP BY 1").all() as Row[]).map((r) => [r.s, r.n]));
-  return { config: I.config(), pastas: pastas().map((p) => ({ pasta: p, lida: est.lidas[p] || "", erro: est.erros[p] || "", presos: [...presos.values()].filter((r) => r === p).length })), falhas: est.falhas, contagem: c };
+  return { config: I.config(), pastas: pastas().map((p) => ({ pasta: p, lida: est.lidas[p] || "", erro: est.erros[p] || "" })), falhas: est.falhas, contagem: c };
 }
 
 const temVinculo = (emitente: string, i: Item) => !!db().prepare("SELECT 1 FROM xml_depara WHERE emitente = ? AND cprod = ? AND un = ?").get(emitente, i.cProd, i.un);
