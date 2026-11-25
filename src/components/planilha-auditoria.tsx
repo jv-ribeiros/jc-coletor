@@ -290,8 +290,8 @@ export function PlanilhaAuditoria({ inv, it, recarregar, abrir }: { inv: Row; it
                 <tr key={i.codpro} className={cx("group", sel.has(i.codpro) ? "bg-brand-50/70" : des ? "bg-slate-50 text-slate-400" : "hover:bg-slate-50/80")}>
                   <td className="text-center"><input type="checkbox" checked={sel.has(i.codpro)} onChange={() => alternar(i.codpro)} className="size-3.5 accent-brand-700" /></td>
                   <td className="text-muted">{i.codpro}</td>
-                  <td className="max-w-[250px]">
-                    <button onClick={() => abrir(i.codpro)} className={cx("block max-w-full truncate text-left font-medium hover:underline", des && "line-through")}>{i.nompro}</button>
+                  <td className="min-w-[240px] !whitespace-normal">
+                    <button onClick={() => abrir(i.codpro)} className={cx("block max-w-full text-left font-medium hover:underline", des && "line-through")}>{i.nompro}</button>
                     <div className="truncate text-[11px] text-muted">{i.unipro} · custo {frs(i.precus)}{i.l[1]?.locais ? ` · ${i.l[1].locais}` : ""}</div>
                   </td>
                   <td className="text-right text-muted">{fq(i.saldo)}</td>

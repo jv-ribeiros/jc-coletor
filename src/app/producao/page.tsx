@@ -72,14 +72,14 @@ export default function Producao() {
             <div className="scroll-fino overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line">
-                  {["Data", "Produto", "Qtd", "Lote", "Custo unit.", "Operador", "Situação", "Nº Lieto"].map((h) => <th key={h} className="px-4 py-2.5 font-medium">{h}</th>)}
+                  {["Data", "Código", "Produto", "Qtd", "Un", "Lote", "Custo unit.", "Operador", "Situação", "Nº Lieto"].map((h) => <th key={h} className="px-4 py-2.5 font-medium">{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {itens.map((p) => (
                     <tr key={p.id} onClick={() => setSel(p.id)} className="cursor-pointer border-b border-line last:border-0 hover:bg-slate-50">
                       <td className="px-4 py-2.5 tabular">{fdata(p.data)}</td>
-                      <td className="max-w-[420px] px-4 py-2.5"><div className="truncate font-medium">{p.nompro}</div><div className="text-[12px] text-muted">{p.codpro}</div></td>
-                      <td className="px-4 py-2.5 tabular font-semibold">{fq(p.qtd)} <span className="font-normal text-muted">{p.unipro}</span></td>
+                      <td className="px-4 py-2.5 tabular">{p.codpro}</td><td className="px-4 py-2.5 font-medium">{p.nompro}</td>
+                      <td className="px-4 py-2.5 tabular font-semibold">{fq(p.qtd)}</td><td className="px-4 py-2.5">{p.unipro}</td>
                       <td className="px-4 py-2.5">{p.lote || "—"}</td>
                       <td className="px-4 py-2.5 tabular">{p.custo != null ? frs(p.custo) : "—"}</td>
                       <td className="px-4 py-2.5">{p.usuario}</td>

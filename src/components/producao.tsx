@@ -24,10 +24,10 @@ export function TabelaInsumos({ sim }: { sim: Row }) {
     <div>
       {sim.aviso && <p className="mb-2 text-[12px] text-amber-700">{sim.aviso}</p>}
       <table className="w-full text-[13px]">
-        <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line"><th className="py-1.5">Insumo (sai do estoque)</th><th>Qtd</th><th>Saldo atual</th></tr></thead>
+        <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line"><th className="py-1.5 pr-3">Código</th><th>Insumo (sai do estoque)</th><th>Qtd</th><th>Saldo atual</th></tr></thead>
         <tbody>{sim.insumos.map((i: Row) => (
           <tr key={i.codpro} className="border-b border-line">
-            <td className="py-1.5"><div className="font-medium">{i.nompro}</div><div className="text-[11px] text-muted">{i.codpro}</div></td>
+            <td className="py-1.5 pr-3 tabular">{i.codpro}</td><td className="font-medium">{i.nompro}</td>
             <td className="tabular">{fq(i.qtd)} {i.unipro}</td>
             <td className={cx("tabular", i.saldo != null && i.saldo < i.qtd && "font-semibold text-rose-700")}>{i.saldo == null ? "—" : fq(i.saldo)}</td>
           </tr>

@@ -243,17 +243,14 @@ function TabelaItens({ lista, abrir, chave }: { lista: Row[]; abrir: (c: string)
       <table className="w-full text-[13px]">
         <thead className="sticky top-0 z-10 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
           <tr className="[&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:py-2.5">
-            <th>Produto</th><th className="text-right">Sistema</th><th className="text-right">Contagem</th><th className="text-right">Recont.</th>
+            <th>Código</th><th>Produto</th><th>Un</th><th>Local</th><th className="text-right">Sistema</th><th className="text-right">Contagem</th><th className="text-right">Recont.</th>
             <th className="text-right">Auditor</th><th className="text-right">Final</th><th className="text-right">Diferença</th><th className="text-right">Valor</th><th>Situação</th>
           </tr>
         </thead>
         <tbody className="tabular">
           {pag.map((i) => (
             <tr key={i.codpro} onClick={() => abrir(i.codpro)} className="cursor-pointer border-b border-line/70 last:border-0 hover:bg-brand-50/40 [&>td]:px-3 [&>td]:py-2">
-              <td className="max-w-[380px]">
-                <div className="truncate font-medium">{i.nompro}</div>
-                <div className="truncate text-[11px] text-muted">{i.codpro} · {i.unipro}{i.l[1]?.locais ? ` · ${i.l[1].locais}` : ""}</div>
-              </td>
+              <td>{i.codpro}</td><td className="font-medium">{i.nompro}</td><td>{i.unipro}</td><td>{i.l[1]?.locais || "—"}</td>
               <td className="text-right text-muted">{fq(i.saldo)}</td>
               <td className="text-right">{fq(i.c1)}</td>
               <td className="text-right">{fq(i.c2)}</td>
@@ -327,18 +324,18 @@ function TabelaAjustes({ lista }: { lista: Row[] }) {
       <div className="scroll-fino overflow-auto rounded-xl border border-line">
         <table className="w-full text-[13px]">
           <thead className="sticky top-0 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-            <tr className="[&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:py-2.5"><th>Produto</th><th className="text-right">Congelado</th><th className="text-right">Final</th><th className="text-right">Ajuste</th><th className="text-right">Custo</th><th className="text-right">Valor</th><th className="text-right">Atual ERP</th><th>Justificativa</th></tr>
+            <tr className="[&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:py-2.5"><th>Código</th><th>Produto</th><th>Un</th><th className="text-right">Congelado</th><th className="text-right">Final</th><th className="text-right">Ajuste</th><th className="text-right">Custo</th><th className="text-right">Valor</th><th className="text-right">Atual ERP</th><th>Justificativa</th></tr>
           </thead>
           <tbody className="tabular">
             {pag.map((a) => (
               <tr key={a.codpro} className="border-b border-line/70 last:border-0 [&>td]:px-3 [&>td]:py-2">
-                <td><div className="font-medium">{a.nompro}</div><div className="text-[11px] text-muted">{a.codpro} · {a.unipro}</div></td>
+                <td>{a.codpro}</td><td className="font-medium">{a.nompro}</td><td>{a.unipro}</td>
                 <td className="text-right text-muted">{fq(a.saldo)}</td><td className="text-right font-semibold">{fq(a.final)}</td>
                 <td className={cx("text-right font-semibold", a.ajuste > 0 ? "text-brand-700" : a.ajuste < 0 ? "text-rose-700" : "text-muted")}>{a.ajuste > 0 ? "+" : ""}{fq(a.ajuste)}</td>
                 <td className="text-right text-muted">{frs(a.precus)}</td>
                 <td className={cx("text-right", a.valor > 0 ? "text-brand-700" : a.valor < 0 ? "text-rose-700" : "")}>{frs(a.valor)}</td>
                 <td className={cx("text-right", a.movimentou && "font-semibold text-amber-700")}>{fq(a.atual)}</td>
-                <td className="max-w-[260px] truncate text-[12px] text-muted">{a.justificativa}</td>
+                <td className="text-[12px] text-muted">{a.justificativa}</td>
               </tr>
             ))}
           </tbody>
@@ -362,12 +359,12 @@ function AjustesLancados({ d }: { d: Dados }) {
       <div className="scroll-fino overflow-auto rounded-xl border border-line">
         <table className="w-full text-[13px]">
           <thead className="sticky top-0 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-            <tr className="[&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:py-2.5"><th>Produto</th><th className="text-right">Congelado</th><th className="text-right">Final</th><th className="text-right">Ajuste</th><th>E/S</th><th className="text-right">Valor</th><th className="text-right">CODIDE</th></tr>
+            <tr className="[&>th]:border-b [&>th]:border-line [&>th]:px-3 [&>th]:py-2.5"><th>Código</th><th>Produto</th><th className="text-right">Congelado</th><th className="text-right">Final</th><th className="text-right">Ajuste</th><th>E/S</th><th className="text-right">Valor</th><th className="text-right">CODIDE</th></tr>
           </thead>
           <tbody className="tabular">
             {pag.map((x) => (
               <tr key={x.id} className="border-b border-line/70 last:border-0 [&>td]:px-3 [&>td]:py-2">
-                <td><div className="font-medium">{nomes.get(x.codpro)?.nompro}</div><div className="text-[11px] text-muted">{x.codpro}</div></td>
+                <td>{x.codpro}</td><td className="font-medium">{nomes.get(x.codpro)?.nompro}</td>
                 <td className="text-right text-muted">{fq(x.saldo)}</td><td className="text-right">{fq(x.final)}</td>
                 <td className={cx("text-right font-semibold", x.ajuste > 0 ? "text-brand-700" : "text-rose-700")}>{x.ajuste > 0 ? "+" : ""}{fq(x.ajuste)}</td>
                 <td>{x.entsai}</td><td className="text-right">{frs(x.valor)}</td><td className="text-right text-muted">{x.codide ?? "—"}</td>

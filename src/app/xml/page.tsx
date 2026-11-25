@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Topo } from "@/components/topo";
 import { TabelaVincular } from "@/components/vincular-tabela";
+import { EditorVinculo, resumoKit, type Alvo } from "@/components/vinculo";
 import { BuscaProduto, campo, numero, useProdutos } from "@/components/movimentos";
 import { Abas, Badge, Button, Card, Carregando, Gaveta, Modal, Paginacao, inputCls, useConfirm, usePaginacao, useToast } from "@/components/ui";
 import { Observacao } from "@/components/observacao";
 import { api, fdata, fq, frs, type Row } from "@/lib/client";
 
-type Aba = "notas" | "vincular" | "config";
+type Aba = "notas" | "vincular" | "vinculados" | "config";
 export default function Pagina() {
   const [aba, setAba] = useState<Aba>("notas"), [s, setS] = useState<Row | null>(null), [admin, setAdmin] = useState(false), [semVinculo, setSem] = useState(0), [versao, setVersao] = useState(0); const toast = useToast();
   const ler = useCallback(() => api("xml").then(setS).catch((e) => toast(e.message, "erro")), [toast]);
@@ -18,9 +19,10 @@ export default function Pagina() {
   return (
     <><Topo /><main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
       <h1 className="text-2xl font-semibold">Importação de XML</h1>
-      <Abas<Aba> className="mt-4" ativa={aba} mudar={setAba} abas={[{ k: "notas", n: "Notas" }, { k: "vincular", n: "Vincular itens", cont: semVinculo, alerta: true }, { k: "config", n: "Configurações" }]} />
+      <Abas<Aba> className="mt-4" ativa={aba} mudar={setAba} abas={[{ k: "notas", n: "Notas" }, { k: "vincular", n: "Vincular itens", cont: semVinculo, alerta: true }, { k: "vinculados", n: "Vinculados" }, { k: "config", n: "Configurações" }]} />
       {aba === "notas" && <Notas s={s} admin={admin} mudou={mudou} />}
       {aba === "vincular" && <Vincular admin={admin} versao={versao} pendentes={s.contagem.PENDENTE} mudou={mudou} />}
+      {aba === "vinculados" && <Vinculados admin={admin} versao={versao} mudou={mudou} />}
       {/* fica montada: trocar de aba não perde o que está sendo preenchido */}
       <div className={aba === "config" ? "" : "hidden"}><Pastas s={s} admin={admin} ler={ler} />{admin && <Config cfg={s.config} salvo={mudou} />}</div>
     </main></>
@@ -61,15 +63,15 @@ function Notas({ s, admin, mudou }: { s: Row; admin: boolean; mudou: () => void 
         {!d ? <Carregando /> : !d.linhas.length ? <p className="p-8 text-center text-sm text-muted">Nenhuma nota.</p> : (
           <div className="scroll-fino overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line">{["NF", "Emissão", "Canal", "Comprador", "Pedido canal", "Valor", "Situação", "Pedido Lieto", "Pendência"].map((h) => <th key={h} className={"whitespace-nowrap px-4 py-2.5 font-medium" + (h === "Valor" ? " text-right" : "")}>{h}</th>)}</tr></thead>
+              <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line">{["NF", "Série", "Emissão", "Canal", "Comprador", "Pedido canal", "Valor", "Situação", "Pedido Lieto", "Pendência"].map((h) => <th key={h} className={"whitespace-nowrap px-4 py-2.5 font-medium" + (h === "Valor" ? " text-right" : "")}>{h}</th>)}</tr></thead>
               <tbody>{d.linhas.map((n: Row) => { const [cor, nome] = SIT[n.status || "PENDENTE"]; return (
                 <tr key={n.chave} onClick={() => setSel(n.chave)} className="cursor-pointer border-b border-line last:border-0 hover:bg-slate-50">
-                  <td className="whitespace-nowrap px-4 py-2.5 font-semibold tabular">{n.numero}<span className="font-normal text-muted">/{n.serie}</span></td>
+                  <td className="whitespace-nowrap px-4 py-2.5 font-semibold tabular">{n.numero}</td><td className="px-4 py-2.5 tabular">{n.serie}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 tabular">{fdata(n.emissao)}</td><td className="whitespace-nowrap px-4 py-2.5">{n.canal || "—"}</td>
-                  <td className="max-w-[220px] truncate px-4 py-2.5" title={n.dest}>{n.dest || "—"}</td><td className="max-w-[150px] truncate px-4 py-2.5">{n.ped || "—"}</td>
+                  <td className="px-4 py-2.5">{n.dest || "—"}</td><td className="px-4 py-2.5">{n.ped || "—"}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-right tabular">{frs(n.valor)}</td>
                   <td className="whitespace-nowrap px-4 py-2.5"><Badge v={cor}>{nome}</Badge>{n.cancelada ? <> <Badge v="CANCELADA">Cancelada</Badge></> : null}</td>
-                  <td className="px-4 py-2.5 tabular">{n.pedido ?? "—"}</td><td className="max-w-[280px] truncate px-4 py-2.5 text-rose-700" title={n.motivo}>{n.motivo}</td>
+                  <td className="px-4 py-2.5 tabular">{n.pedido ?? "—"}</td><td className="px-4 py-2.5 text-rose-700">{n.motivo}</td>
                 </tr>); })}</tbody>
             </table>
           </div>
@@ -82,27 +84,38 @@ function Notas({ s, admin, mudou }: { s: Row; admin: boolean; mudou: () => void 
 }
 
 function Vincular({ admin, versao, pendentes, mudou }: { admin: boolean; versao: number; pendentes?: number; mudou: () => void }) {
-  const [d, setD] = useState<Row | null>(null), [v, setV] = useState<Row[]>([]), [sub, setSub] = useState<"falta" | "feitos">("falta"), [b, setB] = useState(""); const lista = useProdutos(), toast = useToast(), { confirmar, dialogo } = useConfirm();
-  useEffect(() => { api("xml/itens").then(setD).catch((e) => toast(e.message, "erro")); api<Row[]>("xml/vinculos").then(setV).catch((e) => toast(e.message, "erro")); }, [versao, pendentes, toast]);
+  const [d, setD] = useState<Row | null>(null), [b, setB] = useState(""); const lista = useProdutos(), toast = useToast();
+  useEffect(() => { api("xml/itens").then(setD).catch((e) => toast(e.message, "erro")); }, [versao, pendentes, toast]);
   const q = b.trim().toUpperCase(), bate = (t: string) => !q || t.toUpperCase().includes(q);
-  const itens = ((d?.itens || []) as Row[]).filter((i) => bate(`${i.xProd} ${i.cProd} ${i.ean}`)), feitos = v.filter((x) => bate(`${x.cprod} ${x.codpro} ${x.nompro}`));
-  const p1 = usePaginacao(itens, 25, q + sub), p2 = usePaginacao(feitos, 25, q + sub);
-  async function remover(x: Row) { if (await confirmar({ titulo: "Remover vínculo?", texto: `${x.cprod} → ${x.codpro} ${x.nompro}. Notas já importadas não mudam.`, perigo: true })) try { await api("xml/desvincular", x); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
+  const itens = ((d?.itens || []) as Row[]).filter((i) => bate(`${i.xProd} ${i.cProd} ${i.ean}`));
+  const p1 = usePaginacao(itens, 25, q);
   if (!d) return <Carregando />;
   return (
     <Card className="mt-4 p-4">
       <div className="flex flex-wrap items-center gap-3">
-        <select className={inputCls + " !w-auto"} value={sub} onChange={(e) => setSub(e.target.value as "falta" | "feitos")}><option value="falta">Sem vínculo ({d.itens.length})</option><option value="feitos">Já vinculados ({v.length})</option></select>
         <input className={inputCls + " min-w-[220px] flex-1"} placeholder="Buscar item" value={b} onChange={(e) => setB(e.target.value)} />
       </div>
-      {d.fora > 0 && sub === "falta" && <p className="mt-2 text-[12px] text-muted">{d.fora} nota(s) de outro CNPJ ou modelo não entram aqui.</p>}
-      {sub === "falta" ? <>
+      {d.fora > 0 && <p className="mt-2 text-[12px] text-muted">{d.fora} nota(s) de outro CNPJ ou modelo não entram aqui.</p>}
         {!itens.length && <p className="p-8 text-center text-sm text-muted">Nenhum item para vincular.</p>}
         {itens.length > 0 && <div className="mt-3"><TabelaVincular itens={p1.itens} lista={lista} admin={admin} mudou={mudou} /></div>}{p1.controles}
-      </> : <>
-        <div className="scroll-fino mt-3 overflow-x-auto"><table className="w-full text-[13px]"><thead className="text-left text-[12px] text-muted"><tr className="border-b border-line">{["Emitente", "Código no XML", "Produto no Lieto", "Conversão", "Por", ""].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
-          <tbody>{p2.itens.map((x) => <tr key={[x.emitente, x.cprod, x.un].join("|")} className="border-b border-line last:border-0"><td className="px-3 py-2 tabular">{x.emitente}</td><td className="px-3 py-2">{x.cprod}</td><td className="px-3 py-2">{x.codpro} · {x.nompro}</td><td className="whitespace-nowrap px-3 py-2 tabular">1 {x.un} = {fq(x.fator)} {x.unipro}</td><td className="whitespace-nowrap px-3 py-2 text-muted">{x.por} · {fdata(x.em)}</td><td className="px-3 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => remover(x)}>Remover</Button></td></tr>)}</tbody></table></div>{p2.controles}
-      </>}
+    </Card>
+  );
+}
+
+function Vinculados({ admin, versao, mudou }: { admin: boolean; versao: number; mudou: () => void }) {
+  const [v, setV] = useState<Row[] | null>(null), [b, setB] = useState(""), [alvo, setAlvo] = useState<Alvo | null>(null); const lista = useProdutos(), toast = useToast(), { confirmar, dialogo } = useConfirm();
+  useEffect(() => { api<Row[]>("xml/vinculos").then(setV).catch((e) => toast(e.message, "erro")); }, [versao, toast]);
+  const ws = b.trim().toUpperCase().split(/\s+/), l = (v || []).filter((x) => { const t = `${x.cprod} ${x.xProd} ${x.codpro} ${x.nompro} ${x.kit.map((k: Row) => `${k.codpro} ${k.nompro}`).join(" ")}`.toUpperCase(); return ws.every((w) => t.includes(w)); }), { itens, controles } = usePaginacao(l, 25, b);
+  async function remover(x: Row) { if (await confirmar({ titulo: "Remover vínculo?", texto: `${x.xProd || x.cprod}. Notas já importadas não mudam.`, perigo: true })) try { await api("xml/desvincular", x); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
+  if (!v) return <Carregando />;
+  return (
+    <Card className="mt-4 p-4">
+      <input className={inputCls} placeholder="Buscar por anúncio ou produto" value={b} onChange={(e) => setB(e.target.value)} />
+      {!l.length && <p className="p-8 text-center text-sm text-muted">{v.length ? "Nenhum vínculo com essa busca." : "Nenhum item vinculado ainda."}</p>}
+      {l.length > 0 && <div className="scroll-fino mt-3 overflow-x-auto"><table className="w-full min-w-[1200px] text-[13px]"><thead className="text-left text-[12px] text-muted"><tr className="border-b border-line">{["Código no anúncio", "Descrição no anúncio", "Un", "Código na nota", "Produto na nota", "Conversão", "Sai do estoque", "Por", "Em", ""].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr></thead>
+        <tbody>{itens.map((x) => <tr key={[x.emitente, x.cprod, x.un].join("|")} className="border-b border-line align-top last:border-0"><td className="px-3 py-2 tabular">{x.cprod}</td><td className="px-3 py-2 font-medium">{x.xProd || "—"}</td><td className="px-3 py-2">{x.un}</td><td className="px-3 py-2 tabular">{x.codpro}</td><td className="px-3 py-2">{x.nompro}</td><td className="whitespace-nowrap px-3 py-2 tabular">{fq(x.fator)} {x.unipro}</td><td className="px-3 py-2">{x.kit.length ? x.kit.map((k: Row) => <div key={k.codpro}>{fq(k.qtd)} × {k.nompro}</div>) : "O próprio"}</td><td className="px-3 py-2 text-muted">{x.por}</td><td className="whitespace-nowrap px-3 py-2 text-muted tabular">{fdata(x.em)}</td>
+          <td className="whitespace-nowrap px-3 py-2 text-right"><Button size="sm" variant="secondary" onClick={() => setAlvo({ emitente: x.emitente, cprod: x.cprod, un: x.un, xProd: x.xProd, produto: { codpro: x.codpro, nompro: x.nompro, unipro: x.unipro }, fator: String(x.fator).replace(".", ","), kit: x.kit, existe: true })}>Alterar</Button><Button size="sm" variant="ghost" onClick={() => remover(x)}>Remover</Button></td></tr>)}</tbody></table></div>}{controles}
+      {alvo && <EditorVinculo a={alvo} lista={lista} admin={admin} fechar={() => setAlvo(null)} salvo={mudou} />}
       {dialogo}
     </Card>
   );
@@ -151,17 +164,18 @@ function Detalhe({ chave, admin, mudou }: { chave: string; admin: boolean; mudou
 }
 
 function ItemXml({ i, emitente, lista, mudou, chave, admin }: { i: Row; emitente: string; lista: Row[] | null; mudou: () => void; chave: string; admin: boolean }) {
-  const [p, setP] = useState<Row | null>(i.sugestao), [f, setF] = useState("1"), [edit, setEdit] = useState(!i.produto); const toast = useToast();
-  async function ok() { try { await api("xml/vincular", { emitente, cProd: i.cProd, un: i.un, codpro: p!.codpro, fator: numero(f) }); setEdit(false); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
-  async function cadastrar() { try { const r = await api("xml/produto", { chave, item: i.n, modelo: p!.codpro }); toast(`Produto ${r.codpro} cadastrado.`); setEdit(false); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
+  const [p, setP] = useState<Row | null>(i.sugestao), [f, setF] = useState("1"), [alvo, setAlvo] = useState<Alvo | null>(null); const toast = useToast();
+  async function ok() { try { await api("xml/vincular", { emitente, cProd: i.cProd, un: i.un, codpro: p!.codpro, fator: numero(f) }); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
+  async function cadastrar() { try { const r = await api("xml/produto", { chave, item: i.n, modelo: p!.codpro }); toast(`Produto ${r.codpro} cadastrado.`); mudou(); } catch (e) { toast((e as Error).message, "erro"); } }
   return (
     <div className="rounded-xl p-3 ring-1 ring-line">
       <div className="flex justify-between gap-3"><span><b>{i.xProd}</b><span className="block text-[12px] text-muted">código no XML {i.cProd} · EAN {i.ean || "—"} · CFOP {i.cfop}</span></span><span className="tabular">{fq(i.qtd)} {i.un} × {frs(i.vUn)}</span></div>
-      {i.produto && !edit ? <div className="mt-2 flex justify-between text-brand-800"><span>→ {i.produto.codpro} {i.produto.nompro}: {fq(i.produto.qtd)} {i.produto.unipro}</span><button className="underline" onClick={() => setEdit(true)}>Alterar</button></div> : (
+      {i.produto ? <div className="mt-2 flex justify-between gap-3 text-brand-800"><span>→ {i.produto.codpro} {i.produto.nompro}: {fq(i.produto.qtd)} {i.produto.unipro}{i.produto.kit.length > 0 && <span className="block">Sai do estoque: {resumoKit(i.produto.kit)}</span>}</span><button className="shrink-0 underline" onClick={() => setAlvo({ emitente, cprod: i.cProd, un: i.un, xProd: i.xProd, produto: i.produto, fator: String(i.produto.fator).replace(".", ","), kit: i.produto.kit.map((k: Row) => ({ ...k, qtd: Math.round((k.qtd / i.qtd) * 1e4) / 1e4 })), existe: true })}>Alterar</button></div> : (
         <div className="mt-2 space-y-2">{!p ? <BuscaProduto lista={lista} escolher={setP} /> : <>
           <div className="flex justify-between"><span>→ {p.codpro} {p.nompro}{i.sugestao?.codpro === p.codpro ? " (sugerido pelo EAN)" : ""}</span><button className="underline" onClick={() => setP(null)}>Trocar</button></div>
-          <div className="flex items-center gap-2"><span>1 {i.un} do XML =</span><input className={campo + " !w-24"} value={f} onChange={(e) => setF(e.target.value)} /><span>{p.unipro}</span><Button size="sm" disabled={!(numero(f) > 0)} onClick={ok}>Vincular</Button>{admin && <Button size="sm" variant="secondary" onClick={cadastrar}>Cadastrar novo usando este como modelo</Button>}</div></>}</div>
+          <div className="flex items-center gap-2"><span>1 {i.un} do XML =</span><input className={campo + " !w-24"} value={f} onChange={(e) => setF(e.target.value)} /><span>{p.unipro}</span><Button size="sm" disabled={!(numero(f) > 0)} onClick={ok}>Vincular</Button><Button size="sm" variant="secondary" onClick={() => setAlvo({ emitente, cprod: i.cProd, un: i.un, xProd: i.xProd, produto: p, fator: f, kit: [], existe: false, chave, n: i.n })}>Kit</Button>{admin && <Button size="sm" variant="secondary" onClick={cadastrar}>Cadastrar novo usando este como modelo</Button>}</div></>}</div>
       )}
+      {alvo && <EditorVinculo a={alvo} lista={lista} admin={admin} fechar={() => setAlvo(null)} salvo={mudou} />}
     </div>
   );
 }

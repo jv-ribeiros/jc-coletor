@@ -115,6 +115,27 @@ async function cliente(t: Conexao, x: string, n: X.Nota, k: Canal, codemp: numbe
   return { codcli, novo: true };
 }
 
+// Linhas do pedido (o que sai do estoque) de um item da nota: o próprio produto ou os produtos do kit.
+// O valor do kit é dividido pelo preço de venda de cada um no Lieto (faltando preço: pelo custo; senão, pela quantidade). O que sobra vai no último.
+async function linhasPedido(t: Conexao, it: X.Item, v: Row, f: Fiscal): Promise<Row[]> {
+  const alvo = (v.kit.length ? v.kit : [v]) as Row[], ps: { p: Row; qtd: number; idencm: number | null }[] = [];
+  for (const a of alvo) {
+    const p = (await consultar(t, "select * from produtos where codpro = ?", [a.codpro]))[0];
+    if (!p) throw new Erro(`Produto ${a.codpro} não existe no Lieto.`);
+    const ult = (await consultar(t, "select first 1 idencm from notas2 where codpro = ? and idencm > 0 order by numide desc", [a.codpro]))[0];
+    ps.push({ p, qtd: Math.round(a.qtd), idencm: ult ? num(ult.IDENCM) : null });
+  }
+  if (ps.some((x) => !(x.qtd > 0))) throw new Erro(`Quantidade zerada em ${it.xProd}.`);
+  const campo = ["PREPRO", "PRECUS"].find((k) => ps.every((x) => num(x.p[k]) > 0)), pesos = ps.map((x) => (campo ? num(x.p[campo]) : 1) * x.qtd), soma = pesos.reduce((s, x) => s + x, 0);
+  const dividir = (total: number) => { if (ps.length === 1) return [total]; const l = pesos.map((w) => Math.floor(r6((total * w) / soma) * 100) / 100); l[l.length - 1] = r2(total - l.slice(0, -1).reduce((s, x) => s + x, 0)); return l; };
+  const bruto = dividir(it.vProd), desc = dividir(it.desc), frete = dividir(it.frete), outros = dividir(it.outros);
+  return ps.map(({ p, qtd, idencm }, k) => ({
+    CODPRO: txt(p.CODPRO), CODINT: num(p.CODINT), NOMPRO: c(p.NOMPRO, 50), UNIPRO: c(p.UNIPRO, 3), QNTPRO: qtd, PRECUS: num(p.PRECUS), PREORI: bruto[k] / qtd, PREPRO: (bruto[k] - desc[k]) / qtd, VDENOR: (bruto[k] - desc[k]) / qtd,
+    IDENCM: idencm, IDENBM: p.IDENBM ?? null, ALIICM: f.ICMPRO, VALFRE: frete[k], VALOUT: outros[k], pesB: num(p.PESBRU) * qtd, pesL: num(p.PESLIQ) * qtd,
+  }));
+}
+const semPeso = ({ pesB, pesL, ...x }: Row) => { void pesB; void pesL; return x; };
+
 // ---------- importação ----------
 // uma importação por vez em todo o processo (API e agendador)
 const g = globalThis as unknown as { __xmlFila?: Promise<unknown>; __xmlProc?: boolean; __xmlUlt?: number };
@@ -151,9 +172,10 @@ async function importarAgora(chave: string, u: Usuario): Promise<Row> {
         const ult = (await consultar(t, "select first 1 idencm from notas2 where codpro = ? and idencm > 0 order by numide desc", [v.codpro]))[0];
         const cb = f.CLASSTRIB ? (await consultar(t, "select codcbs from tributacaocbs where codcla = ?", [f.CLASSTRIB]))[0] : null;
         delete f.CLASSTRIB;
-        itens.push({ it, p, op, f, qtd: Math.round(v.qtd), idencm: ult ? num(ult.IDENCM) : null, codcbs: cb ? num(cb.CODCBS) : null });
+        const ls = await linhasPedido(t, it, v, f), peso = (a: string) => r4(ls.reduce((s, x) => s + x[a], 0));
+        itens.push({ it, p, op, f, ls, kit: v.kit.length > 0, pesB: peso("pesB"), pesL: peso("pesL"), qtd: Math.round(v.qtd), idencm: ult ? num(ult.IDENCM) : null, codcbs: cb ? num(cb.CODCBS) : null });
       }
-      const pesB = r4(itens.reduce((s, i) => s + num(i.p.PESBRU) * i.qtd, 0)), pesL = r4(itens.reduce((s, i) => s + num(i.p.PESLIQ) * i.qtd, 0));
+      const pesB = r4(itens.reduce((s, i) => s + i.pesB, 0)), pesL = r4(itens.reduce((s, i) => s + i.pesL, 0));
 
       // pedido faturado
       const numdoc = await gen(t, "gen_pedidos1");
@@ -164,12 +186,13 @@ async function importarAgora(chave: string, u: Usuario): Promise<Row> {
       });
       await inserir(t, "pedidos3", { NUMDOC: numdoc });
       for (const i of itens) {
-        i.ideped = await gen(t, "gen_pedidos2");
-        const bruto = i.it.vProd / i.qtd, liq = (i.it.vProd - i.it.desc) / i.qtd;
-        await inserir(t, "pedidos2", {
-          NUMIDE: i.ideped, NUMDOC: numdoc, CODPRO: txt(i.p.CODPRO), CODINT: num(i.p.CODINT), NOMPRO: c(i.p.NOMPRO, 50), UNIPRO: c(i.p.UNIPRO, 3), QNTPRO: i.qtd, PRECUS: num(i.p.PRECUS), PREORI: bruto, PREPRO: liq, VDENOR: liq,
-          TIPPRO: "VND", BAIEST: "S", SERPEC: "P", CODDES: 1, CHANFO: "AF", IDENCM: i.idencm, IDENBM: i.p.IDENBM ?? null, ALIICM: i.f.ICMPRO, HORPRO: hora, COMMAN: "A", VALFRE: i.it.frete, VALOUT: i.it.outros,
-        });
+        i.peds = [];
+        for (const l of i.ls) {
+          const numide = await gen(t, "gen_pedidos2");
+          await inserir(t, "pedidos2", { NUMIDE: numide, NUMDOC: numdoc, ...semPeso(l), TIPPRO: "VND", BAIEST: "S", SERPEC: "P", CODDES: 1, CHANFO: "AF", HORPRO: hora, COMMAN: "A" });
+          i.peds.push({ numide, codpro: l.CODPRO });
+        }
+        i.ideped = i.peds[0].numide;
       }
 
       // nota (tributação do XML)
@@ -186,7 +209,7 @@ async function importarAgora(chave: string, u: Usuario): Promise<Row> {
       await inserir(t, "notas3", { NUMNOT: n.numero, SERNOT: k.sernot });
       for (const i of itens) await inserir(t, "notas2", {
         NUMIDE: await gen(t, "gen_notas2"), NUMNOT: n.numero, SERNOT: k.sernot, CODPRO: txt(i.p.CODPRO), CODINT: num(i.p.CODINT), NOMPRO: c(i.it.xProd, 200), UNIPRO: c(i.p.UNIPRO, 3), QNTPRO: i.qtd, PRECUS: r6(i.p.PRECUS), PREORI: i.it.vProd / i.qtd, PREPRO: i.it.vProd / i.qtd,
-        CODOPE: i.op.codope, CODNCM: c(i.it.ncm, 8), PESBRU: r4(num(i.p.PESBRU) * i.qtd), PESLIQ: r4(num(i.p.PESLIQ) * i.qtd), BAIEST: "S", FATOPE: i.op.fatope, TIPSPE: txt(i.p.TIPSPE) || null, PRETOT: i.it.vProd, IDENCM: i.idencm, IDENBM: i.p.IDENBM ?? null,
+        CODOPE: i.op.codope, CODNCM: c(i.it.ncm, 8), PESBRU: i.pesB, PESLIQ: i.pesL, BAIEST: i.kit ? "N" : "S", FATOPE: i.op.fatope, TIPSPE: txt(i.p.TIPSPE) || null, PRETOT: i.it.vProd, IDENCM: i.idencm, IDENBM: i.p.IDENBM ?? null,
         VALFRE: i.it.frete, VALDES: i.it.desc, VALOUT: i.it.outros, CONPRE: "N", BAIEXT: "N", SOMNOT: "S", TIPPRO: "VND", IDEPED: i.ideped, CODCBS: i.codcbs, ...i.f,
       });
 
@@ -209,14 +232,88 @@ async function importarAgora(chave: string, u: Usuario): Promise<Row> {
             TIPPAG: k.codcor === 3 ? "DIN" : k.codcor === 2 ? "CHE" : "OUT", DATCOM: emi, CODUSU: usu, CODCAI: 1, DATLAN: dataDe(agora()), IDEOFX: 0 });
         }
       }
-      return { numdoc, cli: cl };
+      return { numdoc, cli: cl, peds: itens.map((i) => i.peds) };
     });
+    r.peds.forEach((p, k) => guardarLinhas(chave, k + 1, p));
     return concluir(chave, r.numdoc, u, r.cli.novo ? `IMPORTOU (cliente novo ${r.cli.codcli})` : "IMPORTOU");
   } catch (e) {
     db().prepare("UPDATE xmls SET status = 'ERRO', erro = ? WHERE chave = ?").run((e as Error).message, chave);
     evento("xml", chave, u, "ERRO AO IMPORTAR", (e as Error).message);
     throw e;
   }
+}
+const guardarLinhas = (chave: string, n: number, peds: unknown) => db().prepare("INSERT INTO xml_linhas (chave, n, peds) VALUES (?,?,?) ON CONFLICT(chave, n) DO UPDATE SET peds = excluded.peds").run(chave, n, JSON.stringify(peds));
+
+// ---------- correção das notas já importadas quando o vínculo muda ----------
+const importadasCom = (emitente: string, cprod: string, un: string, de = "") => {
+  const out: { chave: string; numero: number; emissao: string; pedido: number; nota: X.Nota; ns: number[]; conteudo: string }[] = [];
+  for (const x of db().prepare("SELECT chave, numero, emissao, pedido, conteudo FROM xmls WHERE status = 'IMPORTADA' AND substr(chave, 7, 14) = ? AND substr(emissao, 1, 10) >= ? ORDER BY emissao").all(emitente, de) as Row[]) {
+    let r; try { r = X.ler(x.conteudo); } catch { continue; }
+    if (r.tipo !== "nota") continue;
+    const ns = r.nota.itens.filter((i) => i.cProd === cprod && i.un === un).map((i) => i.n);
+    if (ns.length) out.push({ chave: x.chave, numero: x.numero, emissao: x.emissao, pedido: x.pedido, nota: r.nota, ns, conteudo: x.conteudo });
+  }
+  return out;
+};
+export function impacto(q: URLSearchParams) {
+  return { notas: importadasCom(q.get("emitente") || "", q.get("cprod") || "", q.get("un") || "").map((x) => ({ numero: x.numero, emissao: x.emissao, pedido: x.pedido })) };
+}
+export async function corrigir(b: Row, u: Usuario) {
+  const de = String(b.de || "");
+  if (de && !/^\d{4}-\d{2}-\d{2}$/.test(de)) throw new Erro("Data inválida.");
+  const l = importadasCom(String(b.emitente || ""), String(b.cprod || ""), String(b.un || ""), de);
+  await ddl.exigir("xml");
+  const falhas: { numero: number; motivo: string }[] = []; let ok = 0;
+  for (const x of l) {
+    const p = (g.__xmlFila ?? Promise.resolve()).then(() => corrigirNota(x, u)); g.__xmlFila = p.catch(() => {});
+    try { await p; ok++; } catch (e) { falhas.push({ numero: x.numero, motivo: (e as Error).message }); evento("xml", x.chave, u, "NÃO CORRIGIU O VÍNCULO", (e as Error).message); }
+  }
+  return { ok, falhas };
+}
+async function corrigirNota(x: ReturnType<typeof importadasCom>[number], u: Usuario) {
+  const feitas = await emTransacao(async (t) => {
+    const n1 = (await consultar(t, "select numnot, sernot, notcan from notas1 where nfecha = ? and datimp is not null", [x.chave]))[0];
+    if (!n1) throw new Erro("Nota não encontrada no Lieto.");
+    if (txt(n1.NOTCAN) === "S") throw new Erro("Nota cancelada no Lieto.");
+    const pe = (await consultar(t, "select sitdoc from pedidos1 where numdoc = ?", [x.pedido]))[0];
+    if (!pe || txt(pe.SITDOC) !== "FAT") throw new Erro(`Pedido ${x.pedido} não está mais faturado no Lieto.`);
+    if ((await consultar(t, "select first 1 numdev from devolucoes1 where numped = ?", [x.pedido]))[0]) throw new Erro(`Pedido ${x.pedido} tem devolução.`);
+    if ((await consultar(t, "select first 1 numide from conferencias1 where numped = ?", [x.pedido]))[0] || db().prepare("SELECT 1 FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO') AND (pedido = ? OR pedidos LIKE ?)").get(x.pedido, `%"pedido":${x.pedido},%`)) throw new Erro(`Pedido ${x.pedido} já tem conferência.`);
+    const nl = await consultar(t, "select numide, ideped, codpro from notas2 where numnot = ? and sernot = ? order by numide", [num(n1.NUMNOT), txt(n1.SERNOT)]);
+    const pl = await consultar(t, "select numide, codpro from pedidos2 where numdoc = ?", [x.pedido]);
+    if (nl.length !== x.nota.itens.length) throw new Erro("A nota foi alterada no Lieto.");
+    const out: { n: number; peds: { numide: number; codpro: string }[] }[] = [], dets = blocos(bloco(x.conteudo, "infNFe"), "det");
+    for (const n of x.ns) {
+      const it = x.nota.itens[n - 1], li = nl[n - 1], v = await X.resolver(t, x.nota.emitente, it);
+      if (!v) throw new Erro("O vínculo não está completo.");
+      if ([v, ...v.kit].some((k) => Math.abs(k.qtd - Math.round(k.qtd)) > 1e-6)) throw new Erro("Quantidade fracionada.");
+      if (v.kit.length && txt((await consultar(t, "select e.tipest from empresas e join pedidos1 p on p.codemp = e.codemp where p.numdoc = ?", [x.pedido]))[0]?.TIPEST) === "N") throw new Erro("Esta empresa baixa o estoque pela nota: kit não é aceito.");
+      const reg = db().prepare("SELECT peds FROM xml_linhas WHERE chave = ? AND n = ?").get(x.chave, n) as Row | undefined;
+      if (!reg && pl.length !== nl.length) throw new Erro("O pedido foi alterado no Lieto.");
+      const velhas = reg ? (JSON.parse(reg.peds) as { numide: number; codpro: string }[]) : [{ numide: num(li.IDEPED), codpro: txt(li.CODPRO) }];
+      for (const a of velhas) if (!pl.some((y) => num(y.NUMIDE) === a.numide && txt(y.CODPRO) === a.codpro)) throw new Erro("O item foi alterado no Lieto.");
+      const p = (await consultar(t, "select * from produtos where codpro = ?", [v.codpro]))[0], ls = await linhasPedido(t, it, v, tributos(dets[n - 1])), peds: { numide: number; codpro: string }[] = [], q = Math.round(v.qtd);
+      if (!(q > 0)) throw new Erro("Quantidade zerada.");
+      const ult = (await consultar(t, "select first 1 idencm from notas2 where codpro = ? and idencm > 0 order by numide desc", [v.codpro]))[0];
+      const mudar = (tab: string, o: Row, id: number) => executar(t, `update ${tab} set ${Object.keys(o).map((k) => k + " = ?").join(", ")} where numide = ?`, [...Object.values(o), id]);
+      // primeiro para de baixar o estoque: há bases com gatilho de compensação que só desfaz a do produto que ainda está na linha
+      for (const a of velhas) await mudar("pedidos2", { BAIEST: "N" }, a.numide);
+      await mudar("notas2", { BAIEST: "N" }, num(li.NUMIDE));
+      for (let k = 0; k < ls.length; k++) {
+        let id = velhas[k]?.numide;
+        if (id) await mudar("pedidos2", { ...semPeso(ls[k]), BAIEST: "S" }, id);
+        else { id = await gen(t, "gen_pedidos2"); await inserir(t, "pedidos2", { NUMIDE: id, NUMDOC: x.pedido, ...semPeso(ls[k]), TIPPRO: "VND", BAIEST: "S", SERPEC: "P", CODDES: 1, CHANFO: "AF", HORPRO: x.emissao.slice(11, 19), COMMAN: "A" }); }
+        peds.push({ numide: id, codpro: ls[k].CODPRO });
+      }
+      for (const a of velhas.slice(ls.length)) await executar(t, "delete from pedidos2 where numide = ?", [a.numide]);
+      await mudar("notas2", { CODPRO: txt(p.CODPRO), CODINT: num(p.CODINT), UNIPRO: c(p.UNIPRO, 3), QNTPRO: q, PRECUS: r6(p.PRECUS), PREORI: it.vProd / q, PREPRO: it.vProd / q, IDENCM: ult ? num(ult.IDENCM) : null, IDENBM: p.IDENBM ?? null,
+        PESBRU: r4(ls.reduce((s, y) => s + y.pesB, 0)), PESLIQ: r4(ls.reduce((s, y) => s + y.pesL, 0)), BAIEST: v.kit.length ? "N" : "S" }, num(li.NUMIDE));
+      out.push({ n, peds });
+    }
+    return out;
+  });
+  for (const y of feitas) guardarLinhas(x.chave, y.n, y.peds);
+  evento("xml", x.chave, u, "CORRIGIU O VÍNCULO NA NOTA IMPORTADA", { pedido: x.pedido, itens: feitas.map((y) => `${y.n}: ${y.peds.map((k) => k.codpro).join(" + ")}`).join("; ") });
 }
 function concluir(chave: string, pedido: number, u: Usuario, acao: string) {
   db().prepare("UPDATE xmls SET status = 'IMPORTADA', erro = NULL, pedido = ?, importado_em = ? WHERE chave = ?").run(pedido, agora(), chave);
@@ -269,6 +366,6 @@ export async function cadastrarProduto(b: Row, u: Usuario) {
     return cod;
   });
   evento("xml", codpro, u, "CADASTROU PRODUTO", { modelo, xProd: it.xProd, ncm: it.ncm });
-  await X.vincular({ emitente: d.nota.emitente, cProd: it.cProd, un: it.un, codpro, fator: 1 }, u);
+  await X.vincular({ emitente: d.nota.emitente, cProd: it.cProd, un: it.un, codpro, fator: 1, kit: b.kit }, u);
   return { codpro };
 }

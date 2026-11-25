@@ -18,6 +18,7 @@ try {
   if (-not (Test-Path "$origem\.next\BUILD_ID")) { throw 'Extraia o zip inteiro antes.' }
   if (-not (Test-Path "$Destino\config.json") -or -not (Test-Path "$Destino\node.exe")) { throw "O sistema nao esta instalado em $Destino. Use o jc-coletor-instalador.zip na primeira vez." }
   $novo = Get-Content "$origem\package.json" -Raw | ConvertFrom-Json; $atual = Get-Content "$Destino\package.json" -Raw | ConvertFrom-Json
+  if ([version]$novo.version -lt [version]$atual.version) { throw "Este pacote e o $($novo.version), mais antigo que o instalado ($($atual.version)). Use o atualizar.bat da pasta $Destino." }
   if (($novo.dependencies | ConvertTo-Json -Compress) -ne ($atual.dependencies | ConvertTo-Json -Compress)) { throw 'Esta versao precisa do instalador completo (jc-coletor-instalador.zip).' }
   Write-Host "Atualizando de $($atual.version) para $($novo.version) em $Destino"
   $sv = Get-Service JCColetor -ErrorAction SilentlyContinue

@@ -69,6 +69,20 @@ export async function empresasPorCnpj(c: Conexao): Promise<Map<string, number>> 
 }
 
 // ---------- validação (recalculada a cada consulta) ----------
+// O que sai do estoque quando o item da nota é um kit (vazio = não é kit). A nota continua com o produto do vínculo.
+export const kitDe = (emitente: string, cprod: string, un: string) => db().prepare("SELECT codpro, qtd FROM xml_kit WHERE emitente = ? AND cprod = ? AND un = ? ORDER BY rowid").all(emitente, cprod, un) as { codpro: string; qtd: number }[];
+// Item da nota -> produto da nota + produtos que saem. Igual na importação e na correção de vínculo.
+export async function resolver(c: Conexao, emitente: string, i: Item) {
+  const dp = db().prepare("SELECT codpro, fator FROM xml_depara WHERE emitente = ? AND cprod = ? AND un = ?").get(emitente, i.cProd, i.un) as Row | undefined;
+  if (!dp) return null;
+  const ler1 = async (cod: string, q: number) => { const p = (await consultar(c, "select codpro, nompro, unipro from produtos where codpro = ?", [cod]))[0]; return p ? { codpro: txt(p.CODPRO), nompro: txt(p.NOMPRO), unipro: txt(p.UNIPRO), qtd: q } : null; };
+  const p = await ler1(dp.codpro, r4(i.qtd * dp.fator));
+  if (!p) return null;
+  const kit = [] as NonNullable<Awaited<ReturnType<typeof ler1>>>[];
+  for (const k of kitDe(emitente, i.cProd, i.un)) { const x = await ler1(k.codpro, r4(i.qtd * k.qtd)); if (!x) return null; kit.push(x); }
+  return { ...p, fator: dp.fator as number, kit };
+}
+
 export async function analisar(n: Nota) {
   return comConexao(async (c) => {
     const erros: string[] = [];
@@ -85,19 +99,20 @@ export async function analisar(n: Nota) {
     if (ex) erros.push(`Já está no Lieto: nota ${num(ex.NUMNOT)} série ${txt(ex.SERNOT)}.`);
     const itens = [] as Row[];
     for (const i of n.itens) {
-      const dp = db().prepare("SELECT codpro, fator FROM xml_depara WHERE emitente = ? AND cprod = ? AND un = ?").get(n.emitente, i.cProd, i.un) as Row | undefined;
-      let p: Row | undefined, sugestao: Row | null = null;
-      if (dp) p = (await consultar(c, "select codpro, nompro, unipro, proati from produtos where codpro = ?", [dp.codpro]))[0];
-      else if (i.ean) {
+      const produto = await resolver(c, n.emitente, i); let sugestao: Row | null = null;
+      if (!produto && i.ean) {
         const s = await consultar(c, "select codpro, nompro, unipro from produtos where (codbar = ? or eantri = ?) and proati = 'S'", [i.ean, i.ean]);
         if (s.length === 1) sugestao = { codpro: txt(s[0].CODPRO), nompro: txt(s[0].NOMPRO), unipro: txt(s[0].UNIPRO) };
       }
-      itens.push({ ...i, produto: p ? { codpro: txt(p.CODPRO), nompro: txt(p.NOMPRO), unipro: txt(p.UNIPRO), fator: dp!.fator, qtd: r4(i.qtd * dp!.fator) } : null, sugestao });
+      itens.push({ ...i, produto, sugestao });
     }
     const falta = itens.filter((i) => !i.produto).length;
     if (falta) erros.push(`${falta} item(ns) sem produto do Lieto.`);
-    const quebra = itens.filter((i) => i.produto && Math.abs(i.produto.qtd - Math.round(i.produto.qtd)) > 1e-6).length;
+    const quebra = itens.filter((i) => i.produto && [i.produto, ...i.produto.kit].some((x: Row) => Math.abs(x.qtd - Math.round(x.qtd)) > 1e-6)).length;
     if (quebra) erros.push(`${quebra} item(ns) com quantidade fracionada (o pedido do Lieto só aceita inteiro).`);
+    // kit: quem baixa o estoque é o pedido. Empresa que baixa só pela nota não baixaria os produtos do kit.
+    const emp = itens.some((i) => i.produto?.kit.length) ? (await empresasPorCnpj(c)).get(n.emitente) : undefined;
+    if (emp && txt((await consultar(c, "select tipest from empresas where codemp = ?", [emp]))[0]?.TIPEST) === "N") erros.push("Kit: esta empresa baixa o estoque pela nota no Lieto, e os produtos do kit não sairiam.");
     const cl = n.destDoc ? (await consultar(c, "select codcli, nomcli, cgccpf from clientes where cgccpf = ?", [n.destDoc]))[0] : undefined;
     return { erros, itens, aceitos, cliente: cl ? { codcli: num(cl.CODCLI), nome: txt(cl.NOMCLI) } : null };
   });
@@ -319,13 +334,19 @@ export async function vinculos() {
   const l = db().prepare("SELECT * FROM xml_depara ORDER BY em DESC").all() as Row[];
   return comConexao(async (c) => {
     const out: Row[] = [];
-    for (const x of l) { const p = (await consultar(c, "select nompro, unipro from produtos where codpro = ?", [x.codpro]))[0]; out.push({ ...x, nompro: txt(p?.NOMPRO) || "(produto não existe mais)", unipro: txt(p?.UNIPRO) }); }
+    const nome = new Map<string, { nompro: string; unipro: string }>();
+    const ver = async (cod: string) => { if (!nome.has(cod)) { const p = (await consultar(c, "select nompro, unipro from produtos where codpro = ?", [cod]))[0]; nome.set(cod, { nompro: txt(p?.NOMPRO) || "(produto não existe mais)", unipro: txt(p?.UNIPRO) }); } return nome.get(cod)!; };
+    // descrição como veio na nota mais recente
+    const desc = new Map<string, string>(), querem = new Set(l.map((x) => [x.emitente, x.cprod, x.un].join("|")));
+    for (const n of db().prepare("SELECT conteudo FROM xmls ORDER BY emissao DESC").all() as Row[]) { if (desc.size >= querem.size) break; try { const r = ler(n.conteudo); if (r.tipo === "nota") for (const i of r.nota.itens) { const k = [r.nota.emitente, i.cProd, i.un].join("|"); if (querem.has(k) && !desc.has(k)) desc.set(k, i.xProd); } } catch { /* ignora */ } }
+    for (const x of l) { const kit: Row[] = []; for (const k of kitDe(x.emitente, x.cprod, x.un)) kit.push({ ...k, ...(await ver(k.codpro)) }); out.push({ ...x, ...(await ver(x.codpro)), xProd: desc.get([x.emitente, x.cprod, x.un].join("|")) || "", kit }); }
     return out;
   });
 }
 export function desvincular(b: Row, u: Usuario) {
   const r = db().prepare("DELETE FROM xml_depara WHERE emitente = ? AND cprod = ? AND un = ?").run(String(b.emitente || ""), String(b.cprod || ""), String(b.un || ""));
   if (!Number(r.changes)) throw new Erro("Vínculo não encontrado.", 404);
+  db().prepare("DELETE FROM xml_kit WHERE emitente = ? AND cprod = ? AND un = ?").run(String(b.emitente || ""), String(b.cprod || ""), String(b.un || ""));
   evento("xml", String(b.cprod), u, "REMOVEU VÍNCULO", { emitente: b.emitente, un: b.un, codpro: b.codpro });
 }
 export async function detalhe(chave: string) {
@@ -342,11 +363,25 @@ export async function vincular(b: Row, u: Usuario) {
   const emitente = String(b.emitente || ""), cprod = String(b.cProd || ""), un = String(b.un || ""), codpro = String(b.codpro || "").trim(), fator = r4(b.fator);
   if (!/^\d{14}$/.test(emitente) || !cprod || !codpro) throw new Erro("Dados do vínculo incompletos.");
   if (!(fator > 0)) throw new Erro("Informe quantas unidades do Lieto correspondem a 1 do XML.");
-  if (!(await comConexao((c) => consultar(c, "select codpro from produtos where codpro = ?", [codpro])))[0]) throw new Erro("Produto não existe no Lieto.");
-  db().prepare("INSERT INTO xml_depara (emitente, cprod, un, codpro, fator, por, em) VALUES (?,?,?,?,?,?,?) ON CONFLICT(emitente, cprod, un) DO UPDATE SET codpro = excluded.codpro, fator = excluded.fator, por = excluded.por, em = excluded.em")
+  const kit = new Map<string, number>();
+  for (const k of (Array.isArray(b.kit) ? b.kit : []) as Row[]) {
+    const cod = String(k.codpro || "").trim(), q = r4(k.qtd);
+    if (!cod || !(q > 0)) throw new Erro("Informe o produto e a quantidade de cada item do kit.");
+    if (cod === codpro) throw new Erro("O produto da nota não pode ser item do próprio kit.");
+    if (kit.has(cod)) throw new Erro("Há produto repetido no kit.");
+    kit.set(cod, q);
+  }
+  await comConexao(async (c) => { for (const cod of [codpro, ...kit.keys()]) if (!(await consultar(c, "select codpro from produtos where codpro = ?", [cod]))[0]) throw new Erro(`Produto ${cod} não existe no Lieto.`); });
+  db().exec("BEGIN");
+  try {
+    db().prepare("INSERT INTO xml_depara (emitente, cprod, un, codpro, fator, por, em) VALUES (?,?,?,?,?,?,?) ON CONFLICT(emitente, cprod, un) DO UPDATE SET codpro = excluded.codpro, fator = excluded.fator, por = excluded.por, em = excluded.em")
     .run(emitente, cprod, un, codpro, fator, u.nome, agora());
+    db().prepare("DELETE FROM xml_kit WHERE emitente = ? AND cprod = ? AND un = ?").run(emitente, cprod, un);
+    for (const [cod, q] of kit) db().prepare("INSERT INTO xml_kit (emitente, cprod, un, codpro, qtd) VALUES (?,?,?,?,?)").run(emitente, cprod, un, cod, q);
+    db().exec("COMMIT");
+  } catch (e) { db().exec("ROLLBACK"); throw e; }
   marcar();
-  evento("xml", cprod, u, "VINCULOU PRODUTO", { emitente, un, codpro, fator });
+  evento("xml", cprod, u, "VINCULOU PRODUTO", { emitente, un, codpro, fator, kit: [...kit].map(([cod, q]) => `${q} x ${cod}`).join(", ") });
 }
 export function enviar(b: Row) {
   const c = String(b.conteudo || "");

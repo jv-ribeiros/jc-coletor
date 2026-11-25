@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS opcoes (chave TEXT PRIMARY KEY, valor TEXT);
 CREATE TABLE IF NOT EXISTS xmls (chave TEXT PRIMARY KEY, arquivo TEXT, conteudo TEXT, numero INTEGER, serie TEXT, emissao TEXT, valor REAL, recebido_em TEXT);
 CREATE TABLE IF NOT EXISTS xml_cancelados (chave TEXT PRIMARY KEY, em TEXT);
 CREATE TABLE IF NOT EXISTS xml_depara (emitente TEXT, cprod TEXT, un TEXT, codpro TEXT, fator REAL, por TEXT, em TEXT, PRIMARY KEY (emitente, cprod, un));
+CREATE TABLE IF NOT EXISTS xml_kit (emitente TEXT, cprod TEXT, un TEXT, codpro TEXT, qtd REAL, PRIMARY KEY (emitente, cprod, un, codpro));
+CREATE TABLE IF NOT EXISTS xml_linhas (chave TEXT, n INTEGER, peds TEXT, PRIMARY KEY (chave, n));
 CREATE TABLE IF NOT EXISTS paletes (codpro TEXT PRIMARY KEY, camadas INTEGER, caixas INTEGER, obs TEXT, por TEXT, em TEXT);
 CREATE TABLE IF NOT EXISTS permissoes (codfun INTEGER, rotina TEXT, PRIMARY KEY (codfun, rotina));
 CREATE TABLE IF NOT EXISTS conferencias (id INTEGER PRIMARY KEY, pedido INTEGER, romaneio INTEGER, cliente TEXT, itens TEXT NOT NULL, status TEXT NOT NULL, erro TEXT, numide INTEGER,

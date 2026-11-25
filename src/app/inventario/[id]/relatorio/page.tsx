@@ -121,13 +121,13 @@ export default function Relatorio() {
           <section>
             <H>10 maiores divergências</H>
             <table className="tab">
-              <thead><tr><th>Produto</th><th className="r">Dif.</th><th className="r">Valor</th></tr></thead>
+              <thead><tr><th>Código</th><th>Produto</th><th className="r">Dif.</th><th className="r">Valor</th></tr></thead>
               <tbody>
                 {top.map((i) => (
-                  <tr key={i.codpro}><td><div className="truncate font-medium">{i.nompro}</div><div className="text-[9px] text-muted">{i.codpro} · {i.unipro}</div></td>
+                  <tr key={i.codpro}><td>{i.codpro}</td><td className="font-medium">{i.nompro}</td>
                     <td className={`r ${i.dif < 0 ? "neg" : "pos"}`}>{i.dif > 0 ? "+" : ""}{fq(i.dif)}</td><td className={`r font-semibold ${i.valor < 0 ? "neg" : "pos"}`}>{frs(i.valor)}</td></tr>
                 ))}
-                {!top.length && <tr><td colSpan={3} className="text-muted">Nenhuma divergência.</td></tr>}
+                {!top.length && <tr><td colSpan={4} className="text-muted">Nenhuma divergência.</td></tr>}
               </tbody>
             </table>
           </section>

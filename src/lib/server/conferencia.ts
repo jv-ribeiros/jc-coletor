@@ -19,11 +19,14 @@ type Item = { codpro: string; nompro: string; unipro: string; qtd: number; codig
 type Modo = "CEGA" | "SEPARACAO";
 const MODOS: Modo[] = ["SEPARACAO", "CEGA"];
 export const modoAtual = (): Modo => { const v = (db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.modo'").get() as Row | undefined)?.valor; return MODOS.includes(v) ? v : "SEPARACAO"; };
+// Na separação: se o produto pode ser confirmado pela bipagem (nem toda empresa tem coletor). Sem isto, confirma na tela.
+export const bipar = () => (db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.bipar'").get() as Row | undefined)?.valor === "S";
 export function salvarModo(b: Row, u: Usuario) {
   if (!MODOS.includes(b.modo)) throw new Erro("Modo de conferência inválido.");
   db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.modo', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(b.modo);
-  evento("sistema", "conferencia", u, "ALTEROU MODO DA CONFERÊNCIA", b.modo);
-  return { modo: modoAtual() };
+  db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.bipar', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(b.bipar ? "S" : "N");
+  evento("sistema", "conferencia", u, "ALTEROU MODO DA CONFERÊNCIA", { modo: b.modo, bipar: !!b.bipar });
+  return { modo: modoAtual(), bipar: bipar() };
 }
 const separando = (c: Row) => c.modo === "SEPARACAO";
 // ordem de andar no estoque: pelo local; sem local vai para o fim
@@ -68,7 +71,7 @@ function vista(c: Row & { itens: Item[] }, gestao = false) {
   const rec = c.status === "RECONTANDO", sep = separando(c);
   const itens = c.itens.filter((i) => gestao || !rec || i.numrec > 0).map((i) => ({ codpro: i.codpro, nompro: i.nompro, unipro: i.unipro, codigos: i.codigos, fatores: i.fatores || {}, contado: rec ? i.rec : i.con, ...(gestao || sep ? { qtd: i.qtd, local: i.local || "", falta: !!i.falta } : {}), ...(gestao ? { con: i.con, rec: i.rec, numrec: i.numrec } : {}) }));
   const ps = c.pedidos ? (JSON.parse(c.pedidos) as Ped[]).map((x) => x.pedido) : null;
-  return { pedidos: ps, id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, modo: sep ? "SEPARACAO" : "CEGA", aguarda: !!c.aguarda_em, erro: c.erro, usuario: c.usuario, numide: c.numide, criado_em: c.criado_em, fim_em: c.fim_em, obs: c.obs || "", obs_fim: c.obs_fim || "", itens };
+  return { pedidos: ps, id: c.id, pedido: c.pedido, romaneio: c.romaneio, cliente: c.cliente, status: c.status, modo: sep ? "SEPARACAO" : "CEGA", bipar: !sep || bipar(), aguarda: !!c.aguarda_em, erro: c.erro, usuario: c.usuario, numide: c.numide, criado_em: c.criado_em, fim_em: c.fim_em, obs: c.obs || "", obs_fim: c.obs_fim || "", itens };
 }
 export const obter = (id: number, gestao: boolean) => vista(ler(id), gestao);
 

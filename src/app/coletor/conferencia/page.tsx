@@ -1,6 +1,7 @@
 "use client";
-// Coletor › Conferência de expedição. Bipou, contou: não toca no item nem confirma.
-//   Com separação: diz ONDE ir, quanto pegar, recusa a mais e troca de item sozinho.   Cega: só o último lido.
+// Coletor › Conferência de expedição.
+//   Com separação: diz ONDE ir; confirma o produto (bipando, se liberado em Sistema, ou na tela), digita a quantidade e passa ao próximo.
+//   Cega: bipou, contou. Só mostra o último lido.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Check, ChevronLeft, CloudOff, Delete, List, ScanBarcode } from "lucide-react";
@@ -95,10 +96,12 @@ function Contagem({ inicial, sair }: { inicial: Row; sair: () => void }) {
     if (sep && n >= i.qtd) { setMsg({ t: "Completo", k: "ok" }); avancar.current = setTimeout(() => { setSel(""); setMsg({ t: "", k: "" }); }, 900); } else setMsg({ t: txt, k: "ok" });
     enviar();
   }
+  function digitar(i: Row) { clearTimeout(avancar.current); setSel(i.codpro); setMsg({ t: "", k: "" }); setNum(""); setTela("teclado"); }
   function ler(cod: string) {
     if (!cod.trim()) return;
     const i = itens.find((x) => x.codigos.some((y: string) => chave(y) === chave(cod)));
     if (!i) { bip(false); clearTimeout(avancar.current); setMsg({ t: rec ? "Não precisa reconferir este" : c.pedidos ? "Não é deste romaneio" : "Não é deste pedido", k: "er" }); return; }
+    if (sep) { bip(true); digitar(i); return; }
     const f = fatorLido(i, cod); contar(i, f, "soma", `+${fq(f)}`);
   }
   function pula() { const k = itens.findIndex((i) => i.codpro === at?.codpro); for (let n = 1; n <= itens.length; n++) { const x = itens[(k + n) % itens.length]; if (!pronto(x)) { setSel(x.codpro); break; } } setMsg({ t: "", k: "" }); }
@@ -126,9 +129,9 @@ function Contagem({ inicial, sair }: { inicial: Row; sair: () => void }) {
     </Tela>
   );
   if (tela === "teclado" && at) return (
-    <Tela titulo="Quantidade" sub={at.nompro} voltar={() => setTela("contar")} rodape={<BotaoG disabled={num === "" || isNaN(Number(num.replace(",", ".")))} onClick={() => { const n = r4(Number(num.replace(",", "."))); setTela("contar"); contar(at, n, "fixa", "Quantidade digitada"); }}>Confirmar</BotaoG>}>
-      <div className="visor tabular">{num || "0"}<small>{at.unipro}</small></div>
-      <div className="teclas">{["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0", "⌫"].map((k) => <button key={k} aria-label={k === "⌫" ? "Apagar" : k} onClick={() => setNum((v) => (k === "⌫" ? v.slice(0, -1) : k === "," && (!v || v.includes(",")) ? v : (v + k).slice(0, 10)))}>{k === "⌫" ? <Delete /> : k}</button>)}</div>
+    <Tela titulo="Quantidade" sub={at.nompro} voltar={() => setTela("contar")} rodape={<BotaoG disabled={num === "" || isNaN(Number(num.replace(",", ".")))} onClick={() => { const n = r4(Number(num.replace(",", "."))); setTela("contar"); contar(at, n, "fixa", sep ? `Salvo: ${fq(n)} de ${fq(at.qtd)}` : "Quantidade digitada"); }}>{sep ? "Salvar" : "Confirmar"}</BotaoG>}>
+      <div className="visor tabular">{num || "0"}<small>{sep ? `/ ${fq(at.qtd)} ` : ""}{at.unipro}</small></div>
+      <div className="teclas">{["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0", "⌫"].map((k) => <button key={k} aria-label={k === "⌫" ? "Apagar" : k} onMouseDown={(e) => e.preventDefault()} onClick={() => setNum((v) => (k === "⌫" ? v.slice(0, -1) : k === "," && (!v || v.includes(",")) ? v : (v + k).slice(0, 10)))}>{k === "⌫" ? <Delete /> : k}</button>)}</div>
     </Tela>
   );
   if (tela === "lista") { const q = busca.trim().toUpperCase().split(/\s+/); return (
@@ -143,7 +146,7 @@ function Contagem({ inicial, sair }: { inicial: Row; sair: () => void }) {
     <div className="tela">
       <Cabecalho titulo={titulo} sub={sep ? `${fq(feito)} de ${fq(tot)} · ${c.cliente}` : rec ? `Reconferir ${itens.length} item(ns)` : `${lidos} itens lidos`} esq={<button className="ic" aria-label="Voltar" onClick={sair}><ChevronLeft /></button>}
         dir={<button className="ic" aria-label="Lista de itens" onClick={() => { setBusca(""); setTela("lista"); }}><List /></button>} />
-      <form className="leitor" onSubmit={(e) => { e.preventDefault(); const v = leitor.current!.value; leitor.current!.value = ""; ler(v); }}><input ref={leitor} inputMode="none" autoComplete="off" aria-label="Leitor" /></form>
+      {(!sep || c.bipar) && <form className="leitor" onSubmit={(e) => { e.preventDefault(); const v = leitor.current!.value; leitor.current!.value = ""; ler(v); }}><input ref={leitor} inputMode="none" autoComplete="off" aria-label="Leitor" /></form>}
       <div className="corpo">
         <div className="barra"><i style={{ width: `${tot ? Math.min(100, (feito / tot) * 100) : 0}%` }} /></div>
         {/* alturas fixas: o aviso troca de cor no mesmo lugar, nada empurra os botões */}
@@ -151,9 +154,10 @@ function Contagem({ inicial, sair }: { inicial: Row; sair: () => void }) {
           <div className="onde">{sep ? at?.local ? <><small>Vá até</small><b>{at.local}</b></> : <small>Sem local cadastrado</small> : <small>{at ? "Último lido" : "Nada lido ainda"}</small>}</div>
           <div className="nome">{at?.nompro || "Leia o primeiro produto"}</div>
           <div className="qtd tabular">{at ? fq(at.contado) : "—"}{sep && at && <i>/ {fq(at.qtd)}</i>}{at && <i>{at.unipro}</i>}</div>
-          <div className="diz">{off ? `Sem rede: ${fila.length} guardada(s)` : msg.t || "Leia o código"}</div>
+          <div className="diz">{off ? `Sem rede: ${fila.length} guardada(s)` : msg.t || (!sep ? "Leia o código" : at && pronto(at) ? "Completo" : c.bipar ? "Bipe o produto" : "Confirme o produto")}</div>
         </div>
-        <div className="mais"><button className="bt2" aria-label="Menos um" disabled={!at || !at.contado} onClick={() => contar(at!, Math.max(0, r4(agora(at!.codpro) - 1)), "fixa", "Corrigido")}>−</button><button className="bt2" disabled={!at} onClick={() => { setNum(""); setTela("teclado"); }}>Digitar</button><button className="bt2" aria-label="Mais um" disabled={!at} onClick={() => contar(at!, 1, "soma", "+1")}>+</button></div>
+        {!sep && <div className="mais"><button className="bt2" aria-label="Menos um" disabled={!at || !at.contado} onClick={() => contar(at!, Math.max(0, r4(agora(at!.codpro) - 1)), "fixa", "Corrigido")}>−</button><button className="bt2" disabled={!at} onClick={() => { setNum(""); setTela("teclado"); }}>Digitar</button><button className="bt2" aria-label="Mais um" disabled={!at} onClick={() => contar(at!, 1, "soma", "+1")}>+</button></div>}
+        {sep && <button className="bt2" disabled={!at} onClick={() => digitar(at!)}>{at && pronto(at) ? "Corrigir quantidade" : c.bipar ? "Confirmar sem bipar" : "Confirmar produto"}</button>}
         <div className="dois"><button className="bt2" disabled={!sep || !restam} onClick={pula}>Próximo item</button><button className="bt2" disabled={!sep || !at || pronto(at) || oc} onClick={naoTem}>Não tem</button></div>
       </div>
       <div className="rodape"><BotaoG tom={sep && !restam && !comFalta ? "ok" : undefined} disabled={oc || (sep && restam > 0)} onClick={fechar}>{oc ? "Aguarde…" : !sep ? (rec ? "Fechar reconferência" : "Fechar contagem") : restam ? `Faltam ${restam} ${restam > 1 ? "itens" : "item"}` : comFalta ? "Concluir com falta" : "Concluir"}</BotaoG></div>

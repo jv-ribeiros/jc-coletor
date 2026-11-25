@@ -2,8 +2,7 @@
 // Coletor: tarefas primeiro. O que a pessoa deixou aberto, depois o que espera, depois as rotinas.
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRightLeft, Check, ChevronRight, Factory, LogOut, PackageOpen, PackageX, ClipboardCheck, ShieldAlert, Tags, Undo2, Shuffle, Warehouse } from "lucide-react";
-import { BotoesApp } from "@/components/instalar";
+import { ArrowRightLeft, Check, ChevronRight, Factory, LogOut, Settings, PackageOpen, PackageX, ClipboardCheck, ShieldAlert, Tags, Undo2, Shuffle, Warehouse } from "lucide-react";
 import { sair } from "@/components/acesso";
 import { Cabecalho } from "@/components/coletor";
 import { useConformidade, usePode } from "@/components/topo";
@@ -36,7 +35,7 @@ export default function ColetorInicio() {
   const c = abertas[0];
   return (
     <div className="tela">
-      <Cabecalho titulo={u?.nome || "Coletor"} sub={dia} dir={<button className="ic" onClick={sair} title="Sair" aria-label="Sair"><LogOut /></button>} />
+      <Cabecalho titulo={u?.nome || "Coletor"} sub={dia} dir={<><Link href="/coletor/ajustes" className="ic" title="Ajustes" aria-label="Ajustes"><Settings /></Link><button className="ic" onClick={sair} title="Sair" aria-label="Sair"><LogOut /></button></>} />
       <main className="corpo">
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
         {c ? <Link href={`/coletor/conferencia?id=${c.id}`} className="heroi"><small>Você parou aqui</small><b>{c.pedido ? `Pedido ${c.pedido}` : `Romaneio ${c.romaneio}`}</b><small>{c.cliente}</small><div className="barra"><i style={{ width: `${c.total ? (c.feito / c.total) * 100 : 0}%` }} /></div><div className="ir">Continuar<span className="tabular">{fq(c.feito)} / {fq(c.total)}</span></div></Link>
@@ -51,8 +50,6 @@ export default function ColetorInicio() {
           const r = conf?.rotinas?.find((x: Row) => x.id === m.rotina), bloq = r && !r.ok;
           return <Link key={m.nome} href={m.href} className="modulo"><m.icone strokeWidth={1.8} />{m.nome}{bloq && <span><ShieldAlert />Bloqueado</span>}</Link>;
         })}</div>
-        <BotoesApp />
-        {pode(["gestao"]) && <Link href="/" className="bt2">Abrir a gestão</Link>}
       </main>
     </div>
   );
