@@ -11,7 +11,7 @@ import { db } from "./db";
 import { adicionais, cods, fatores } from "./cadastro";
 import * as ddl from "./ddl";
 import { Erro, agora, chave, evento, limparObs, obsErp, r4, type Usuario } from "./comum";
-import { comConexao, consultar, emTransacao, executar, hoje, lerBlob, num, txt, type Conexao } from "./fb";
+import { comConexao, consultar, emTransacao, executar, hoje, iso, lerBlob, num, txt, type Conexao } from "./fb";
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Ped = { pedido: number; itens: Record<string, number> };
@@ -45,17 +45,91 @@ const gravarItens = (id: number, itens: Item[], status: string) => db().prepare(
 const noLieto = async (t: Conexao, numped: number) => (await consultar(t, "select first 1 numide, datcon, datenc from conferencias1 where numped = ? order by numide desc", [numped]))[0];
 const final = (i: Item) => (i.numrec > 0 ? i.rec : i.con);
 
-// Fila: pedidos de um romaneio, um pedido, ou os pendentes sem conferência
-export async function fila(q: URLSearchParams) {
-  const rom = Number(q.get("romaneio") || 0), ped = Number(q.get("pedido") || 0);
-  return comConexao(async (c) => {
-    const filtro = rom ? "a.numrom = ?" : ped ? "a.numdoc = ?" : "a.sitdoc = 'PED' and a.datfat is null";
-    const l = await consultar(c, `select first 300 a.numdoc, a.numrom, a.sitdoc, a.datdoc, b.nomcli, (select count(*) from pedidos2 x where x.numdoc = a.numdoc and x.baiest = 'S') n,
-      (select max(h.numide) from conferencias1 h where h.numped = a.numdoc) h from pedidos1 a left join clientes b on b.codcli = a.codcli where ${filtro} order by a.numrom desc, a.numdoc`, rom || ped ? [rom || ped] : []);
-    const hs = l.map((x) => num(x.H)).filter(Boolean), est = new Map<number, string>();
-    if (hs.length) for (const h of await consultar(c, `select numide, datcon, datenc from conferencias1 where numide in (${hs.join(",")})`)) est.set(num(h.NUMIDE), h.DATCON ? "CONFERIDA" : h.DATENC ? "ENCERRADA" : "ABERTA NO LIETO");
-    return l.map((x) => { const a = abertaDe(num(x.NUMDOC)); return { pedido: num(x.NUMDOC), romaneio: num(x.NUMROM), situacao: txt(x.SITDOC), data: x.DATDOC, cliente: txt(x.NOMCLI), itens: num(x.N), conferencia: a ? (a.aguarda_em ? "AGUARDA GESTÃO" : "EM ANDAMENTO") : est.get(num(x.H)) || "", usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : "", id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null }; });
+// Fila: pedidos de um romaneio, um pedido, ou os pendentes sem conferência. Com entrega, cidade, tamanho e o PCP do Lieto (PEDIDOS1).
+// filtro (sem romaneio/pedido): hoje = entrega até hoje · amanha · todos · andamento (abertos aqui). q = número de pedido/romaneio ou nome do cliente.
+const dia = (v: unknown) => (v instanceof Date ? iso(v) : v ? String(v).slice(0, 10) : "");
+const CAMPOS = `a.numdoc, a.numrom, a.ordrom, a.sitdoc, a.datdoc, a.datent, a.datpcp, a.datsep, a.datcon, a.datfat, a.datexp, a.qntvol, a.pesbru, b.nomcli, b.cidcli, b.estcli,
+  (select first 1 r.nomrot from rotas r where r.codrot = a.codrot) nomrot, (select count(*) from pedidos2 x where x.numdoc = a.numdoc and x.baiest = 'S') n,
+  (select max(h.numide) from conferencias1 h where h.numped = a.numdoc) h`;
+async function linhas(c: Conexao, where: string, args: unknown[]) {
+  const l = await consultar(c, `select first 300 ${CAMPOS} from pedidos1 a left join clientes b on b.codcli = a.codcli where ${where} order by a.datent, a.numrom, a.ordrom, a.numdoc`, args);
+  const hs = l.map((x) => num(x.H)).filter(Boolean), est = new Map<number, Row>();
+  if (hs.length) for (const h of await consultar(c, `select numide, datcon, datenc, codcon from conferencias1 where numide in (${hs.join(",")})`)) est.set(num(h.NUMIDE), h);
+  const aqui = new Map((db().prepare("SELECT pedido, MAX(fim_em) fim, usuario FROM conferencias WHERE status = 'CONFERIDA' AND pedido IS NOT NULL GROUP BY pedido").all() as Row[]).map((x) => [x.pedido, x]));
+  return l.map((x) => {
+    const n = num(x.NUMDOC), a = abertaDe(n), h = est.get(num(x.H)), fe = aqui.get(n);
+    return { pedido: n, romaneio: num(x.NUMROM), ordem: num(x.ORDROM), situacao: txt(x.SITDOC), data: x.DATDOC, entrega: dia(x.DATENT), cliente: txt(x.NOMCLI), cidade: [txt(x.CIDCLI), txt(x.ESTCLI)].filter(Boolean).join("/"), rota: txt(x.NOMROT),
+      itens: num(x.N), volumes: num(x.QNTVOL), peso: num(x.PESBRU), pcp: { pcp: dia(x.DATPCP), sep: dia(x.DATSEP), con: dia(x.DATCON), fat: dia(x.DATFAT), exp: dia(x.DATEXP) },
+      conferencia: a ? (a.aguarda_em ? "AGUARDA GESTÃO" : "EM ANDAMENTO") : h ? (h.DATCON ? "CONFERIDA" : h.DATENC ? "ENCERRADA" : "ABERTA NO LIETO") : "",
+      usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : fe?.usuario || "", desde: a?.criado_em || "", feito: a ? progresso(a) : null, id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null };
   });
+}
+const progresso = (a: Row) => { const it = JSON.parse(a.itens) as Item[]; return separando(a) ? { feito: r4(it.reduce((s, i) => s + i.con, 0)), total: r4(it.reduce((s, i) => s + i.qtd, 0)) } : { feito: it.filter((i) => final(i) > 0).length, total: it.length }; };
+export async function fila(q: URLSearchParams) {
+  const rom = Number(q.get("romaneio") || 0), ped = Number(q.get("pedido") || 0), f = q.get("filtro") || "", busca = (q.get("q") || "").trim();
+  return comConexao(async (c) => {
+    if (rom) return linhas(c, "a.numrom = ?", [rom]);
+    if (ped) return linhas(c, "a.numdoc = ?", [ped]);
+    if (/^\d+$/.test(busca)) return linhas(c, "(a.numdoc = ? or a.numrom = ?)", [Number(busca), Number(busca)]);
+    if (busca.length > 1) return linhas(c, "a.sitdoc = 'PED' and a.datfat is null and upper(b.nomcli) containing ?", [busca.toUpperCase()]);
+    if (f === "andamento") { const ns = abertas().flatMap((a) => (a.pedido != null ? [a.pedido] : (JSON.parse(a.pedidos) as Ped[]).map((x) => x.pedido))); return ns.length ? linhas(c, `a.numdoc in (${ns.map(Number).join(",")})`, []) : []; }
+    const base = "a.sitdoc = 'PED' and a.datfat is null";
+    return linhas(c, f === "hoje" ? `${base} and a.datent <= current_date` : f === "amanha" ? `${base} and a.datent = current_date + 1` : base, []);
+  });
+}
+
+// Romaneios dos últimos 30 dias (ROMANEIOS: uma linha por produto; o cabeçalho é a primeira) com caminhão, motorista, rota e andamento.
+export async function romaneios() {
+  return comConexao(async (c) => {
+    const cab = await consultar(c, `select r.numdoc, min(r.datdoc) datdoc, max(r.datfec) datfec, max(r.codmot) codmot, max(r.codcam) codcam from romaneios r where r.datdoc >= current_date - 30 group by r.numdoc order by r.numdoc desc`);
+    if (!cab.length) return [];
+    const ns = cab.map((x) => num(x.NUMDOC)), ps = await linhas(c, `a.numrom in (${ns.join(",")})`, []);
+    const mot = new Map((await consultar(c, "select codmot, nommot from motoristas")).map((x) => [num(x.CODMOT), txt(x.NOMMOT)]));
+    const cam = new Map((await consultar(c, "select codcam, nomcam, placam from caminhoes")).map((x) => [num(x.CODCAM), [txt(x.NOMCAM), txt(x.PLACAM)].filter(Boolean).join(" ")]));
+    return cab.map((x) => { const l = ps.filter((p) => p.romaneio === num(x.NUMDOC)); return { romaneio: num(x.NUMDOC), saida: dia(x.DATDOC), fechado: !!x.DATFEC, motorista: mot.get(num(x.CODMOT)) || "", caminhao: cam.get(num(x.CODCAM)) || "",
+      rotas: [...new Set(l.map((p) => p.rota).filter(Boolean))].join(", "), pedidos: l.length, conferidos: l.filter((p) => ["CONFERIDA", "ENCERRADA"].includes(p.conferencia)).length, andamento: l.filter((p) => ["EM ANDAMENTO", "AGUARDA GESTÃO"].includes(p.conferencia)).length }; }).filter((x) => x.pedidos);
+  });
+}
+
+// Ficha do pedido antes de começar: cabeçalho, PCP, observação e itens em ordem de local. Não abre conferência.
+export async function ficha(n: number) {
+  return comConexao(async (c) => {
+    const p = (await linhas(c, "a.numdoc = ?", [n]))[0];
+    if (!p) throw new Erro(`Pedido ${n} não encontrado.`, 404);
+    const cab = (await consultar(c, "select a.obsped, a.datdoc, v.nomven from pedidos1 a left join vendedores v on v.codven = a.codven where a.numdoc = ?", [n]))[0];
+    const its = await consultar(c, "select b.codpro, max(p.nompro) nompro, max(p.unipro) unipro, max(p.locpro) locpro, sum(b.qntpro) q from pedidos2 b join produtos p on p.codpro = b.codpro where b.numdoc = ? and b.baiest = 'S' group by b.codpro", [n]);
+    const itens = its.map((i) => ({ codpro: txt(i.CODPRO), nompro: txt(i.NOMPRO), unipro: txt(i.UNIPRO), local: txt(i.LOCPRO), qtd: r4(num(i.Q)) })).sort((a, b) => Number(!a.local) - Number(!b.local) || a.local.localeCompare(b.local, "pt-BR", { numeric: true }) || a.nompro.localeCompare(b.nompro));
+    return { ...p, vendedor: txt(cab?.NOMVEN), obs: (await lerBlob(cab?.OBSPED)).trim(), criado: cab?.DATDOC ?? null, lista: itens };
+  });
+}
+
+// Conferência de volumes do romaneio: pedidos dele que foram separados ANTES (fora da separação somada do romaneio).
+// Contou igual ao QNTVOL: confere. Diferente: só grava se pedirem para corrigir, e aí o QNTVOL do Lieto passa a ser o contado.
+export async function volumes(rom: number) {
+  const juntos = new Set((db().prepare("SELECT pedidos FROM conferencias WHERE pedido IS NULL AND romaneio = ? AND status = 'CONFERIDA'").all(rom) as Row[]).flatMap((x) => (JSON.parse(x.pedidos) as Ped[]).map((p) => p.pedido)));
+  const l = (await comConexao((c) => linhas(c, "a.numrom = ?", [rom]))).filter((p) => p.conferencia === "CONFERIDA" && !juntos.has(p.pedido));
+  const ult = new Map((db().prepare("SELECT pedido, contado, esperado, corrigido, usuario, em FROM conf_volumes WHERE romaneio = ? ORDER BY id").all(rom) as Row[]).map((x) => [x.pedido, x]));
+  return { romaneio: rom, pedidos: l.map((p) => ({ pedido: p.pedido, cliente: p.cliente, esperado: p.volumes, por: p.usuario, ordem: p.ordem, conferido: ult.get(p.pedido) || null })).sort((a, b) => a.ordem - b.ordem || a.pedido - b.pedido) };
+}
+export async function conferirVolume(rom: number, b: Row, u: Usuario) {
+  const pedido = Number(b.pedido), contado = Number(b.contado);
+  if (!Number.isInteger(contado) || contado < 0 || contado > 9999) throw new Erro("Quantidade de volumes inválida.");
+  const p = (await volumes(rom)).pedidos.find((x) => x.pedido === pedido);
+  if (!p) throw new Erro("Este pedido não está na conferência de volumes deste romaneio.");
+  if (contado !== p.esperado && !b.corrigir) return { diferente: true, esperado: p.esperado, contado };
+  if (contado !== p.esperado) {
+    await ddl.exigir("conferencia");
+    await emTransacao((t) => executar(t, "update pedidos1 set qntvol = ? where numdoc = ?", [contado, pedido]));
+    evento("conferencia", `romaneio ${rom}`, u, "CORRIGIU VOLUMES", { pedido, antes: p.esperado, contado });
+  }
+  db().prepare("INSERT INTO conf_volumes (romaneio, pedido, esperado, contado, corrigido, usuario, em) VALUES (?,?,?,?,?,?,?)").run(rom, pedido, p.esperado, contado, contado !== p.esperado ? 1 : 0, u.nome, agora());
+  return volumes(rom);
+}
+
+// Por pedido, quem começa a separar marca DATSEP no PCP do Lieto (só se vazio). Banco fora do homologado: fica para o fim.
+async function marcarSeparando(pedido: number, id: number, u: Usuario) {
+  try { await ddl.exigir("conferencia"); await emTransacao((t) => executar(t, "update pedidos1 set datsep = ? where numdoc = ? and datsep is null", [hoje(), pedido])); }
+  catch (e) { evento("conferencia", id, u, "DATSEP FICA PARA O FIM", (e as Error).message); }
 }
 
 // Em andamento com este usuário ("Você parou aqui")
@@ -95,6 +169,7 @@ export async function abrir(b: Row, u: Usuario) {
   const modo = modoAtual(), ja2 = abertaDe(pedido); if (ja2) { if (ja2.pedido == null) throw new Erro(`Este pedido está na conferência do romaneio ${ja2.romaneio}.`); return obter(ja2.id, false); }
   const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, modo, status, codfun, usuario, criado_em) VALUES (?,?,?,?,?,'CONTANDO',?,?,?)").run(pedido, d.rom, d.cli, JSON.stringify(modo === "SEPARACAO" ? [...d.itens].sort(porLocal) : d.itens), modo, u.codfun, u.nome, agora()).lastInsertRowid);
   evento("conferencia", id, u, "ABRIU", { pedido, modo });
+  await marcarSeparando(pedido, id, u);
   return obter(id, false);
 }
 
@@ -176,7 +251,13 @@ export function voltar(id: number, u: Usuario) {
 
 const emAndamento = new Set<number>();
 // Fecha a contagem: confere tudo certo -> grava; divergiu -> abre/continua a reconferência só dos divergentes
-export async function fechar(id: number, u: Usuario, obs?: unknown) {
+// Volumes (PEDIDOS1.QNTVOL) de cada pedido, pedidos no fim: sem eles não conclui. 428 = o coletor pergunta e chama de novo.
+function lerVolumes(c: Row, v: unknown): Record<string, number> {
+  const ps = c.pedido != null ? [c.pedido] : (JSON.parse(c.pedidos) as Ped[]).map((x) => x.pedido), m = (v && typeof v === "object" ? v : {}) as Record<string, unknown>, out: Record<string, number> = {};
+  for (const p of ps) { const n = Number(m[p]); if (!Number.isInteger(n) || n < 1 || n > 9999) throw new Erro("Informe os volumes.", 428); out[p] = n; }
+  return out;
+}
+export async function fechar(id: number, u: Usuario, obs?: unknown, vols?: unknown) {
   const c = ler(id);
   if (!["CONTANDO", "RECONTANDO"].includes(c.status)) throw new Erro("Conferência já finalizada.");
   if (c.aguarda_em) throw new Erro("Este pedido está esperando a gestão.");
@@ -197,7 +278,7 @@ export async function fechar(id: number, u: Usuario, obs?: unknown) {
     evento("conferencia", id, u, primeira ? "FOI PARA RECONFERÊNCIA" : "RECONFERÊNCIA AINDA DIVERGENTE", div.map((i) => i.codpro).join(", "));
     return { ...obter(id, false), divergentes: div.length };
   }
-  return finalizar(id, u, "CONFERIDA");
+  return finalizar(id, u, "CONFERIDA", lerVolumes(c, vols));
 }
 export const encerrar = (id: number, u: Usuario, obs?: unknown) => { guardarObs(id, "obs_fim", obs); return finalizar(id, u, "ENCERRADA"); };
 function guardarObs(id: number, campo: "obs" | "obs_fim", obs: unknown) {
@@ -217,7 +298,7 @@ async function obsInterna(t: Conexao, pedido: number, texto: string) {
   return true;
 }
 
-async function finalizar(id: number, u: Usuario, como: "CONFERIDA" | "ENCERRADA") {
+async function finalizar(id: number, u: Usuario, como: "CONFERIDA" | "ENCERRADA", vols?: Record<string, number>) {
   if (emAndamento.has(id)) throw new Erro("Já está gravando.");
   emAndamento.add(id);
   try {
@@ -261,7 +342,9 @@ async function finalizar(id: number, u: Usuario, como: "CONFERIDA" | "ENCERRADA"
         }
         const o = obsErp([c.obs, c.obs_fim].filter(Boolean).join(" | "), 500);
         if (o && !(await obsInterna(t, x.pedido, `CONFERENCIA ${num1}: ${o}`))) soAqui.push(x.pedido);
-        await executar(t, "update pedidos1 set datsep = ? where numdoc = ? and datsep is null", [hoje(), x.pedido]);
+        // PCP do Lieto: separado (se vazio) e, conferido, DATCON/FUNCON (se vazios) e os volumes
+        if (ok) await executar(t, "update pedidos1 set datsep = coalesce(datsep, ?), funcon = case when datcon is null then ? else funcon end, datcon = coalesce(datcon, ?), qntvol = ? where numdoc = ?", [hoje(), u.codfun, hoje(), vols![x.pedido], x.pedido]);
+        else await executar(t, "update pedidos1 set datsep = ? where numdoc = ? and datsep is null", [hoje(), x.pedido]);
       }
       return ids;
     });

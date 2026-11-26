@@ -51,8 +51,9 @@ function bip(ok: boolean) {
 
 export default function Coletor() {
   const [pronto, setPronto] = useState(false), [invId, setInvId] = useState<number | null>(null);
-  useEffect(() => { setInvId(ls.get("invId", null)); setPronto(true); }, []);
-  const escolher = (i: number | null) => { ls.set("invId", i); setInvId(i); };
+  // Pelo módulo abre a escolha (com o que estava aberto marcado); pelo "Você parou aqui" (?id=) entra direto.
+  useEffect(() => { const q = Number(new URLSearchParams(location.search).get("id")) || null; if (q) ls.set("invId", q); setInvId(q); setPronto(true); }, []);
+  const escolher = (i: number | null) => { if (i) ls.set("invId", i); setInvId(i); if (location.search) history.replaceState(null, "", "/coletor/inventario"); };
   if (!pronto) return null;
   if (!invId) return <Entrada entrar={escolher} />;
   return <App key={invId} invId={invId} trocar={escolher} />;
@@ -66,7 +67,10 @@ function useInventarios() {
   return { invs, erro, carregar };
 }
 function Entrada({ entrar }: { entrar: (inv: number) => void }) {
-  const { invs, erro, carregar } = useInventarios(), u = sessao.usuario(), pode = usePode()(["inventario_avulso"]), [abrindo, setAbrindo] = useState(false);
+  const { invs, erro, carregar } = useInventarios(), u = sessao.usuario(), podeR = usePode(), pode = podeR(["inventario_avulso"]), [abrindo, setAbrindo] = useState(false);
+  const [progs, setProgs] = useState<Row[] | null>(null), [prog, setProg] = useState<Row | null>(null), ultimo = ls.get<number | null>("invId", null);
+  const lerProgs = useCallback(() => api<Row[]>("inventarios/programados").then(setProgs).catch(() => setProgs([])), []);
+  useEffect(() => { lerProgs(); }, [lerProgs]);
   return (
     <div className="inv min-h-dvh bg-canvas">
       <div className="mx-auto flex min-h-dvh max-w-[560px] flex-col px-3.5 pb-6 pt-3">
@@ -76,14 +80,47 @@ function Entrada({ entrar }: { entrar: (inv: number) => void }) {
           <button onClick={sair} className="ic" title="Sair"><LogOut className="size-5" /></button>
         </div>
         {abrindo ? <AbrirAvulso entrar={entrar} voltar={() => setAbrindo(false)} /> : <>
-        <div className="mt-8 flex items-center justify-between text-base font-semibold text-muted"><span>Escolha o inventário</span>
-          <button onClick={carregar} className="ic"><RefreshCw className="size-4" /></button></div>
-        <ListaInventarios invs={invs} erro={erro} atual={null} escolher={entrar} escuro />
+        <div className="mt-8 flex items-center justify-between text-base font-semibold text-muted"><span>Em andamento</span>
+          <button onClick={() => { carregar(); lerProgs(); }} className="ic" aria-label="Atualizar"><RefreshCw className="size-4" /></button></div>
+        <ListaInventarios invs={invs} erro={erro} atual={ultimo} escolher={entrar} escuro />
+        {progs && progs.length > 0 && <>
+          <div className="mt-6 text-base font-semibold text-muted">Programados</div>
+          <div className="mt-2 space-y-2">{progs.map((p) => { const atras = p.data_prevista < p.hoje, hoje = p.data_prevista === p.hoje; return (
+            <button key={p.id} onClick={() => setProg(p)} className="flex min-h-[72px] w-full items-center gap-3 rounded-xl bg-white px-4 py-3 text-left">
+              <span className={cx("grid w-14 shrink-0 place-items-center rounded-xl py-1.5 text-center leading-tight", atras ? "bg-rose-50 text-rose-700" : hoje ? "bg-brand-50 text-brand-800" : "bg-indigo-50 text-indigo-800")}><span className="text-[19px] font-bold">{p.data_prevista.slice(8, 10)}</span><span className="text-[11px] font-semibold">{p.data_prevista.slice(5, 7)}/{p.data_prevista.slice(2, 4)}</span></span>
+              <span className="min-w-0 flex-1"><span className="block text-[16px] font-semibold">{p.descricao}</span><span className="block text-[13px] text-muted">{atras ? "Atrasado · " : hoje ? "Hoje · " : ""}{p.itens}{p.responsavel ? ` · ${p.responsavel}` : ""}</span></span>
+              <ArrowRight className="size-5 text-muted" />
+            </button>); })}</div>
+        </>}
         <button disabled={!pode} onClick={() => setAbrindo(true)} className="bt1 mt-4">Abrir inventário avulso</button>
         {!pode && <p className="mt-2 text-[14px] text-muted">Seu usuário não tem a liberação &quot;Inventário: abrir avulso&quot;.</p>}
         </>}
+        {prog && <Comecar p={prog} pode={podeR(["inventario_iniciar"])} fechar={() => setProg(null)} entrar={entrar} />}
       </div>
     </div>
+  );
+}
+// Começar um programado pelo coletor: mostra quantos produtos e o aviso de data antes de congelar o saldo.
+function Comecar({ p, pode, fechar, entrar }: { p: Row; pode: boolean; fechar: () => void; entrar: (i: number) => void }) {
+  const [n, setN] = useState<Row | null>(null), [erro, setErro] = useState(""), [oc, setOc] = useState(false);
+  useEffect(() => { if (pode) api(`inventarios/${p.id}/contar-programado`).then(setN).catch((e) => setErro((e as Error).message)); }, [p.id, pode]);
+  const futuro = p.data_prevista > p.hoje, travado = futuro && !p.antecipar, data = `${p.data_prevista.slice(8, 10)}/${p.data_prevista.slice(5, 7)}`;
+  const motivo = !pode ? "Seu usuário não tem a liberação \"Inventário: começar programado no coletor\"." : travado ? `Este só pode começar em ${data}.` : "";
+  async function ir() { setOc(true); setErro(""); try { const r = await api(`inventarios/${p.id}/comecar`, {}); entrar(r.id); } catch (e) { setErro((e as Error).message); setOc(false); } }
+  return (
+    <Folha titulo={p.descricao} fechar={fechar} rodape={<><button className="bt1" disabled={!!motivo || oc || (!n && !erro)} onClick={ir}>{oc ? "Congelando saldos…" : futuro ? `Começar hoje (era ${data})` : "Começar agora"}</button>
+      <button className="bt2 mt-2 w-full" onClick={fechar}>Voltar</button></>}>
+      <div className="space-y-3 text-[16px]">
+        <div className="rounded-2xl bg-white p-4"><div className="text-[13px] text-muted">Programado para</div><div className="text-[20px] font-semibold">{data}{p.data_prevista < p.hoje ? " · atrasado" : p.data_prevista === p.hoje ? " · hoje" : ""}</div>
+          <div className="mt-2 text-[13px] text-muted">O que contar</div><div>{p.itens}</div>
+          {p.responsavel && <><div className="mt-2 text-[13px] text-muted">Responsável</div><div>{p.responsavel}</div></>}
+          {p.obs && <><div className="mt-2 text-[13px] text-muted">Observação</div><div>{p.obs}</div></>}
+          <div className="mt-2 text-[13px] text-muted">Produtos</div><div className="text-[20px] font-semibold">{!pode ? "—" : n ? n.produtos : erro ? "—" : "Contando…"}</div></div>
+        {!motivo && <p className="rounded-2xl bg-amber-50 p-4 text-amber-900">O saldo do Lieto fica congelado na hora em que começar. Comece só se for contar agora até o fim: o que vender ou entrar no meio vira diferença.</p>}
+        {motivo && <p className="rounded-2xl bg-slate-200 p-4">{motivo}</p>}
+        {erro && <p className="rounded-2xl bg-rose-100 p-4 text-rose-800">{erro}</p>}
+      </div>
+    </Folha>
   );
 }
 function AbrirAvulso({ entrar, voltar }: { entrar: (inv: number) => void; voltar: () => void }) {
@@ -141,7 +178,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
   const [fila, setFila] = useState<Leitura[]>([]), [rejeitadas, setRejeitadas] = useState<Leitura[]>([]), [minhas, setMinhas] = useState<Row[]>([]);
   const [lista, setLista] = useState<Row[] | null>(null);
   const [exigirLocal, setExigirLocal] = useState(false);
-  const [disp, setDisp] = useState(""), [trocando, setTrocando] = useState(false);
+  const [disp, setDisp] = useState("");
   const refBusca = useRef<HTMLInputElement>(null), refLocal = useRef<HTMLInputElement>(null), refQtd = useRef<HTMLInputElement>(null);
   const filaRef = useRef<Leitura[]>([]), enviando = useRef(false), refContar = useRef<HTMLDivElement>(null);
 
@@ -312,6 +349,8 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
   const prodRef = useRef<string | null>(null); prodRef.current = prod?.codpro ?? null;
   const vTotal = r4(total(expr) * (prod?.fator || 1)), ts = termos(expr);
   const corEtapa = ["bg-slate-500", "bg-sky-500", "bg-amber-500", "bg-rose-500"][cat?.etapaNum ?? 0];
+  // Trocar de inventário (ou abrir avulso / começar programado): leituras não enviadas ficam guardadas e vão quando voltar a ele.
+  const trocarAgora = () => { if (expr && !confirm("Há uma quantidade digitada e não gravada. Trocar mesmo assim?")) return; if (pend.length && !confirm(`${pend.length} leitura(s) deste inventário ainda não foram enviadas. Elas ficam guardadas e são enviadas quando você voltar a ele. Trocar?`)) return; trocar(null); };
   const salvarLocal = (l: string) => { const v = l.trim().toUpperCase(); if (exigirLocal && !v) return erro("Informe o local."); setLocal(v); ls.set("local", v); setEditLocal(false); setAviso(null); };
 
   return (
@@ -320,7 +359,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
       <header className="z-20 shrink-0 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <Link href="/coletor" aria-label="Voltar ao menu" onClick={(e) => { if (expr && !confirm("Há uma quantidade digitada e não gravada. Sair mesmo assim?")) e.preventDefault(); }} className="ic"><ArrowLeft className="size-5" /></Link>
-          <button onClick={() => setTrocando(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          <button onClick={() => trocarAgora()} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
             <span className="min-w-0"><span className="block truncate text-[15px] font-semibold">{cat ? cat.descricao : "Carregando…"}</span>
               <span className="block text-[13px] text-muted">{op}{bipagem && cat?.etapaNum !== 3 ? " · bipagem +1" : ""}</span></span>
             <ChevronDown className="size-5 shrink-0 text-muted" />
@@ -515,7 +554,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
         </section>
         <section className="rounded-2xl bg-white p-4 shadow-sm">
           <div className="text-[13px] font-semibold uppercase tracking-wide text-muted">Inventário</div>
-          <button onClick={() => setTrocando(true)} className="mt-2 flex w-full items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-left">
+          <button onClick={() => trocarAgora()} className="mt-2 flex w-full items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-left">
             <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{cat?.descricao}</span><span className="text-[12px] text-muted">#{invId} · {cat ? NOME_ETAPA[cat.etapa] : ""}</span></span>
             <span className="text-[14px] font-semibold text-brand-700">Trocar</span>
           </button>
@@ -555,11 +594,6 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
         </div>
       </nav>
 
-      {trocando && <TrocarInventario atual={invId} fechar={() => setTrocando(false)} escolher={(i) => {
-        if (i === invId) return setTrocando(false);
-        if (pend.length && !confirm(`${pend.length} leitura(s) deste inventário ainda não foram enviadas. Elas ficam guardadas e são enviadas quando você voltar a ele. Trocar?`)) return;
-        trocar(i);
-      }} />}
     </div>
   );
 }
@@ -589,10 +623,6 @@ function Folha({ titulo, fechar, children, rodape }: { titulo: string; fechar: (
   );
 }
 
-function TrocarInventario({ atual, fechar, escolher }: { atual: number; fechar: () => void; escolher: (i: number) => void }) {
-  const { invs, erro } = useInventarios();
-  return <Folha titulo="Trocar inventário" fechar={fechar}><ListaInventarios invs={invs} erro={erro} atual={atual} escolher={escolher} /></Folha>;
-}
 
 // ---------- leituras ----------
 function MinhasLeituras({ rej, pend, minhas, validas, cancelar, descartar }:

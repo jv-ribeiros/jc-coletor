@@ -264,6 +264,7 @@ function LinhaProgramada({ i, hoje, iniciar, editar, excluir }: { i: Row; hoje: 
           <span className="truncate">{descreverEscopo(i.escopo ? JSON.parse(i.escopo) : null)}</span>
           <span>Começa em: <b className="text-ink">{NOME_ETAPA[i.etapa_inicial || "CONTAGEM"]}</b></span>
           {i.responsavel && <span>Responsável: <b className="text-ink">{i.responsavel}</b></span>}
+          {(i.antecipar ?? 1) === 0 && <span className="font-semibold text-amber-700">Só na data</span>}
           {i.obs && <span className="truncate italic">{i.obs}</span>}
         </div>
       </div>
@@ -322,7 +323,7 @@ export function useUsuariosLieto() {
 
 function EditarProgramacao({ inv, fechar, salvo }: { inv: Row; fechar: () => void; salvo: () => void }) {
   const toast = useToast(), usuarios = useUsuariosLieto();
-  const [f, setF] = useState({ descricao: inv.descricao, dataPrevista: inv.data_prevista, responsavel: inv.responsavel || "", etapa: inv.etapa_inicial || "CONTAGEM", obs: inv.obs || "" });
+  const [f, setF] = useState({ descricao: inv.descricao, dataPrevista: inv.data_prevista, responsavel: inv.responsavel || "", etapa: inv.etapa_inicial || "CONTAGEM", obs: inv.obs || "", antecipar: (inv.antecipar ?? 1) === 1 });
   const [ocupado, setOcupado] = useState(false);
   async function salvar() {
     setOcupado(true);
@@ -339,6 +340,7 @@ function EditarProgramacao({ inv, fechar, salvo }: { inv: Row; fechar: () => voi
         </div>
         <EtapaInicial valor={f.etapa} mudar={(v) => setF({ ...f, etapa: v })} />
         <Field label="Observação"><input className={inputCls} value={f.obs} onChange={(e) => setF({ ...f, obs: e.target.value })} placeholder="Ex.: parar expedição às 16h" /></Field>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={f.antecipar} onChange={(e) => setF({ ...f, antecipar: e.target.checked })} /><span><b>Pode antecipar no coletor</b><span className="block text-[12px] text-muted">Desligado, o coletor mostra o inventário mas só deixa começar na data prevista.</span></span></label>
         <p className="flex items-center gap-2 text-[12px] text-muted"><Clock className="size-3.5" />Os itens (escopo) são definidos na programação e lidos do ERP ao iniciar.</p>
       </div>
     </Modal>

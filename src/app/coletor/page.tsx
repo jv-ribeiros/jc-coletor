@@ -39,7 +39,7 @@ export default function ColetorInicio() {
       <main className="corpo">
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
         {c ? <Link href={`/coletor/conferencia?id=${c.id}`} className="heroi"><small>Você parou aqui</small><b>{c.pedido ? `Pedido ${c.pedido}` : `Romaneio ${c.romaneio}`}</b><small>{c.cliente}</small><div className="barra"><i style={{ width: `${c.total ? (c.feito / c.total) * 100 : 0}%` }} /></div><div className="ir">Continuar<span className="tabular">{fq(c.feito)} / {fq(c.total)}</span></div></Link>
-          : inv ? <Link href="/coletor/inventario" className="heroi"><small>Você parou aqui</small><b>{inv.descricao}</b><small>Inventário · {NOME_ETAPA[inv.etapa]}</small><div className="ir">Continuar<ChevronRight /></div></Link> : null}
+          : inv ? <Link href={`/coletor/inventario?id=${inv.id}`} className="heroi"><small>Você parou aqui</small><b>{inv.descricao}</b><small>Inventário · {NOME_ETAPA[inv.etapa]}</small><div className="ir">Continuar<ChevronRight /></div></Link> : null}
         {cf && fila && (fila.length ? <>
           <div className="secao">Próximos pedidos</div>
           <Link href="/coletor/conferencia" className="linha"><div><b>{fila.length} {fila.length === 1 ? "pedido esperando" : fila.length >= 300 ? "ou mais esperando" : "pedidos esperando"}</b><small>Próximo: {fila[0].pedido} · {fila[0].cliente}</small></div><ChevronRight /></Link></>

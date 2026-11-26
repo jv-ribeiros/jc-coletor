@@ -18,7 +18,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
   const [empresas, setEmpresas] = useState<Row[] | null>(null);
   const [erpErro, setErpErro] = useState("");
   const amanha = new Date(Date.now() + 864e5).toLocaleDateString("sv-SE");
-  const [f, setF] = useState({ descricao: "", codemp: "", dataSaldo: new Date().toLocaleDateString("sv-SE"), etapa: "CONTAGEM", dataPrevista: amanha, responsavel: "", repetir: "", vezes: "6", obs: "" });
+  const [f, setF] = useState({ descricao: "", codemp: "", dataSaldo: new Date().toLocaleDateString("sv-SE"), etapa: "CONTAGEM", dataPrevista: amanha, responsavel: "", repetir: "", vezes: "6", obs: "", antecipar: true });
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [modo, setModo] = useState<"todos" | "lista">("todos");
@@ -140,6 +140,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Data prevista"><input type="date" className={inputCls} value={f.dataPrevista} onChange={(e) => setF({ ...f, dataPrevista: e.target.value })} /></Field>
               <Field label="Responsável"><SelResponsavel usuarios={usuarios} valor={f.responsavel} mudar={(v) => setF({ ...f, responsavel: v })} /></Field>
+              <label className="col-span-full flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={f.antecipar} onChange={(e) => setF({ ...f, antecipar: e.target.checked })} /><span><b>Pode antecipar no coletor</b><span className="block text-[12px] text-muted">Desligado, o coletor mostra o inventário mas só deixa começar na data prevista.</span></span></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Repetir"><select className={inputCls} value={f.repetir} onChange={(e) => setF({ ...f, repetir: e.target.value })}>{REPETIR.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>

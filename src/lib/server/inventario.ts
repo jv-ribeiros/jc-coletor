@@ -159,9 +159,9 @@ function programar(body: Row, b: { descricao: string; escopo: Escopo | null; eta
   return tx(() => {
     const ids = datas.map((d) => {
       const desc = vezes > 1 ? `${b.descricao} — ${fdataBr(d)}` : b.descricao;
-      const id = Number(db().prepare(`INSERT INTO inventarios (descricao, etapa, origem, codemp, nomemp, criado_por, tol_qtd, tol_pct, escopo, etapa_inicial, data_prevista, responsavel, obs)
-        VALUES (?, 'PROGRAMADO', 'ERP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(desc, codemp, String(body.nomemp || ""), b.usuario, cfg.regras.toleranciaQtd || 0, cfg.regras.toleranciaPct || 0,
-        b.escopo ? JSON.stringify(b.escopo) : null, b.etapa, d, String(body.responsavel || "").trim().toUpperCase() || null, String(body.obs || "").trim() || null).lastInsertRowid);
+      const id = Number(db().prepare(`INSERT INTO inventarios (descricao, etapa, origem, codemp, nomemp, criado_por, tol_qtd, tol_pct, escopo, etapa_inicial, data_prevista, responsavel, obs, antecipar)
+        VALUES (?, 'PROGRAMADO', 'ERP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(desc, codemp, String(body.nomemp || ""), b.usuario, cfg.regras.toleranciaQtd || 0, cfg.regras.toleranciaPct || 0,
+        b.escopo ? JSON.stringify(b.escopo) : null, b.etapa, d, String(body.responsavel || "").trim().toUpperCase() || null, String(body.obs || "").trim() || null, body.antecipar === false ? 0 : 1).lastInsertRowid);
       log(id, b.usuario, "PROGRAMOU INVENTÁRIO", { dataPrevista: d, escopo: descreverEscopo(b.escopo), etapaInicial: b.etapa });
       return id;
     });
@@ -178,9 +178,10 @@ export function editarProgramacao(id: number, body: Row) {
   if (!descricao) throw new Erro("Informe a descrição.");
   if (inv.data_prevista && descricao.endsWith(` — ${fdataBr(inv.data_prevista)}`)) descricao = descricao.slice(0, -fdataBr(inv.data_prevista).length) + fdataBr(data);
   const etapa = ETAPAS_INICIO.includes(body.etapa) ? body.etapa : inv.etapa_inicial;
-  db().prepare("UPDATE inventarios SET descricao = ?, data_prevista = ?, responsavel = ?, obs = ?, etapa_inicial = ? WHERE id = ?")
-    .run(descricao, data, String(body.responsavel ?? inv.responsavel ?? "").trim().toUpperCase() || null, String(body.obs ?? inv.obs ?? "").trim() || null, etapa, id);
-  log(id, usuario, "EDITOU PROGRAMAÇÃO", { dataPrevista: data, responsavel: body.responsavel ?? inv.responsavel, etapaInicial: etapa });
+  const antecipar = body.antecipar === undefined ? inv.antecipar ?? 1 : body.antecipar ? 1 : 0;
+  db().prepare("UPDATE inventarios SET descricao = ?, data_prevista = ?, responsavel = ?, obs = ?, etapa_inicial = ?, antecipar = ? WHERE id = ?")
+    .run(descricao, data, String(body.responsavel ?? inv.responsavel ?? "").trim().toUpperCase() || null, String(body.obs ?? inv.obs ?? "").trim() || null, etapa, antecipar, id);
+  log(id, usuario, "EDITOU PROGRAMAÇÃO", { dataPrevista: data, responsavel: body.responsavel ?? inv.responsavel, etapaInicial: etapa, podeAntecipar: !!antecipar });
 }
 
 export function excluirProgramacao(id: number) {
@@ -190,6 +191,33 @@ export function excluirProgramacao(id: number) {
 }
 
 // Inicia um programado: lê o ERP agora, congela o saldo e libera os coletores.
+// ---------- programados no coletor ----------
+export const programados = () => (db().prepare("SELECT id, descricao, nomemp, data_prevista, responsavel, obs, escopo, etapa_inicial, COALESCE(antecipar, 1) antecipar FROM inventarios WHERE etapa = 'PROGRAMADO' ORDER BY data_prevista, id").all() as Row[])
+  .map(({ escopo, ...i }) => ({ ...i, itens: descreverEscopo(escopo ? JSON.parse(escopo) : null), hoje: agora().slice(0, 10) }));
+// Quantos produtos entram (lê o Lieto, sem gravar nada)
+export async function contarProgramado(id: number) {
+  const inv = getInv(id);
+  if (inv.etapa !== "PROGRAMADO") return { produtos: null, iniciado: true };
+  const { produtos } = await lerOrigem({ origem: "erp", codemp: inv.codemp });
+  return { produtos: filtrarEscopo(produtos, inv.escopo ? JSON.parse(inv.escopo) : null).length, iniciado: false };
+}
+// Começar pelo coletor: congela o saldo agora. Se outro aparelho começou junto, entra no mesmo.
+const comecando = new Map<number, Promise<Row>>();
+export function comecarNoColetor(id: number, usuario: string) {
+  const ja = comecando.get(id); if (ja) return ja;
+  const p = (async () => {
+    const inv = getInv(id);
+    if (inv.etapa !== "PROGRAMADO") return { id, etapa: inv.etapa, jaIniciado: true };
+    const hoje = agora().slice(0, 10);
+    if (inv.data_prevista > hoje && !(inv.antecipar ?? 1)) throw new Erro(`Este inventário só pode começar em ${fdataBr(inv.data_prevista)}.`);
+    const r = await iniciar(id, { usuario });
+    if (inv.data_prevista !== hoje) log(id, usuario, inv.data_prevista > hoje ? "ANTECIPOU PELO COLETOR" : "INICIOU ATRASADO PELO COLETOR", { dataPrevista: inv.data_prevista, iniciadoEm: hoje });
+    return r;
+  })().finally(() => comecando.delete(id));
+  comecando.set(id, p);
+  return p;
+}
+
 export async function iniciar(id: number, body: Row) {
   const inv = getInv(id), usuario = nome(body.usuario);
   if (inv.etapa !== "PROGRAMADO") throw new Erro("Este inventário já foi iniciado.");
@@ -198,7 +226,10 @@ export async function iniciar(id: number, body: Row) {
   const { produtos: todos, origem, codemp, dataSaldo } = await lerOrigem({ origem: "erp", codemp: inv.codemp, dataSaldo: body.dataSaldo });
   const produtos = filtrarEscopo(todos, escopo);
   if (!produtos.length) throw new Erro("Nenhum produto atende aos critérios deste inventário.");
-  tx(() => gravarInventario({ descricao: inv.descricao, origem, codemp, nomemp: inv.nomemp, dataSaldo, usuario, escopo, etapa }, produtos, id));
+  tx(() => {
+    if ((getInv(id) as Row).etapa !== "PROGRAMADO") throw new Erro("Este inventário já foi iniciado.");
+    gravarInventario({ descricao: inv.descricao, origem, codemp, nomemp: inv.nomemp, dataSaldo, usuario, escopo, etapa }, produtos, id);
+  });
   return { id, etapa };
 }
 
