@@ -63,13 +63,14 @@ async function lerOrigem(body: Row) {
 // Catálogo resumido para montar a lista de itens na tela (sem gravar nada).
 export async function previa(body: Row) {
   const { produtos } = await lerOrigem(body);
-  return produtos.map((p) => [p.codpro, p.nompro, p.unipro, p.grupo, p.subgrupo, p.marca, p.tipo, r4(p.saldo), r4(p.precus), p.codbar]);
+  return produtos.map((p) => [p.codpro, p.nompro, p.unipro, p.grupo, p.subgrupo, p.marca, p.tipo, r4(p.saldo), r4(p.precus), p.codbar, p.local_erp || ""]);
 }
 
 type Meta = { descricao: string; origem: string; codemp: number | null; nomemp: string; dataSaldo: string; usuario: string; escopo: Escopo | null; etapa: string; origemInv?: number | null };
 
 // Abre já congelando o saldo, ou só programa (sem ler o ERP) para uma data futura.
 export async function abrir(body: Row) {
+  if (Array.isArray(body.partes) && body.partes.length) return abrirPartes(body);
   const descricao = String(body.descricao || "").trim();
   if (!descricao) throw new Erro("Informe a descrição do inventário.");
   const escopo = escopoAtivo(body.escopo) ? (body.escopo as Escopo) : null;
@@ -106,6 +107,39 @@ export function abrirAvulso(body: Row): Promise<{ id: number }> {
   })().finally(() => abrindoAvulso.delete(uid));
   abrindoAvulso.set(uid, p);
   return p;
+}
+
+// Lista dividida em partes: cada parte vira um inventário com a sua lista fixa de produtos (agora ou programado, com data e responsável próprios).
+type Parte = { descricao: string; produtos: string[]; dataPrevista?: string; responsavel?: string };
+async function abrirPartes(body: Row) {
+  const partes = (body.partes as Row[]).map((p): Parte => ({ descricao: String(p.descricao || "").trim().slice(0, 140), produtos: [...new Set((Array.isArray(p.produtos) ? p.produtos : []).map(String))], dataPrevista: String(p.dataPrevista || ""), responsavel: String(p.responsavel || "").trim().toUpperCase() }));
+  if (partes.length > 50) throw new Erro("No máximo 50 partes.");
+  for (const p of partes) { if (!p.descricao) throw new Erro("Informe o nome de cada parte."); if (!p.produtos.length) throw new Erro(`${p.descricao}: parte sem produtos.`); if (body.programar && !DATA_OK.test(p.dataPrevista!)) throw new Erro(`${p.descricao}: informe a data.`); }
+  const etapa = ETAPAS_INICIO.includes(body.etapa) ? String(body.etapa) : "CONTAGEM", usuario = nome(body.usuario), rotulo = String(body.rotulo || "Lista").slice(0, 120), filtros = body.filtros ?? null;
+  const esc = (p: Parte, k: number): Escopo => ({ ...ESCOPO_VAZIO, produtos: p.produtos, rotulo: partes.length > 1 ? `${rotulo} · parte ${k + 1}/${partes.length}` : rotulo, filtros });
+  if (body.programar) {
+    const codemp = Number(body.codemp); if (!codemp) throw new Erro("Escolha a empresa.");
+    const cfg = getConfig();
+    return tx(() => {
+      const ids = partes.map((p, k) => {
+        const id = Number(db().prepare(`INSERT INTO inventarios (descricao, etapa, origem, codemp, nomemp, criado_por, tol_qtd, tol_pct, escopo, etapa_inicial, data_prevista, responsavel, obs, antecipar)
+          VALUES (?, 'PROGRAMADO', 'ERP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(p.descricao, codemp, String(body.nomemp || ""), usuario, cfg.regras.toleranciaQtd || 0, cfg.regras.toleranciaPct || 0,
+          JSON.stringify(esc(p, k)), etapa, p.dataPrevista!, p.responsavel || null, String(body.obs || "").trim() || null, body.antecipar === false ? 0 : 1).lastInsertRowid);
+        log(id, usuario, "PROGRAMOU INVENTÁRIO", { dataPrevista: p.dataPrevista, escopo: descreverEscopo(esc(p, k)), etapaInicial: etapa, parte: `${k + 1}/${partes.length}` });
+        return id;
+      });
+      return { id: ids[0], ids, programado: true };
+    });
+  }
+  const { produtos: todos, origem, codemp, dataSaldo } = await lerOrigem(body);
+  return tx(() => {
+    const ids = partes.map((p, k) => {
+      const lista = filtrarEscopo(todos, esc(p, k));
+      if (!lista.length) throw new Erro(`${p.descricao}: nenhum produto encontrado na origem.`);
+      return gravarInventario({ descricao: p.descricao, origem, codemp, nomemp: String(body.nomemp || ""), dataSaldo, usuario, escopo: esc(p, k), etapa }, lista);
+    });
+    return { id: ids[0], ids };
+  });
 }
 
 // Grava cabeçalho + itens + códigos (chamar dentro de tx). Com idExistente, inicia um programado.

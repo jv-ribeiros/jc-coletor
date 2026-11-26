@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Building2, CalendarPlus, Database, FileSpreadsheet, ListChecks, Play, X } from "lucide-react";
-import { MontarLista, deLinha, resumoLista, type LinhaPrevia, type ProdPrevia } from "@/components/montar-lista";
+import { MontarLista, deLinha, resumoLista, type LinhaPrevia, type ProdPrevia, type Selecao } from "@/components/montar-lista";
 import { EtapaInicial, SelResponsavel, useUsuariosLieto } from "@/components/inicio";
 import { Button, Field, cx, inputCls, useToast } from "@/components/ui";
-import { ESCOPO_VAZIO, descreverEscopo, escopoAtivo, filtrarEscopo, type Escopo } from "@/lib/escopo";
+import { ESCOPO_VAZIO } from "@/lib/escopo";
 import { api, frsK, type Row } from "@/lib/client";
 
 const REPETIR = [["", "Não repetir"], ["7", "Toda semana"], ["14", "A cada 15 dias"], ["mensal", "Todo mês"], ["trimestral", "A cada 3 meses"]] as const;
@@ -22,10 +22,10 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [modo, setModo] = useState<"todos" | "lista">("todos");
-  const [escopo, setEscopo] = useState<Escopo>(ESCOPO_VAZIO);
+  const [sel, setSel] = useState<Selecao | null>(null);
   const [prods, setProds] = useState<ProdPrevia[] | null>(null), [prevErro, setPrevErro] = useState(""), [listaAberta, setListaAberta] = useState(false);
   const programar = quando === "programar";
-  useEffect(() => { setProds(null); setPrevErro(""); }, [origem, f.codemp, f.dataSaldo, arquivo]);
+  useEffect(() => { setProds(null); setPrevErro(""); setSel(null); }, [origem, f.codemp, f.dataSaldo, arquivo]);
   useEffect(() => { if (programar) setOrigem("erp"); }, [programar]);
 
   async function lerCsv() {
@@ -42,7 +42,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
       setProds(linhas.map(deLinha));
     } catch (e) { setPrevErro((e as Error).message); }
   }
-  const resumo = prods && escopoAtivo(escopo) ? resumoLista(filtrarEscopo(prods, escopo)) : null;
+  const resumo = prods && sel ? resumoLista(prods.filter((p) => new Set(sel.produtos).has(p.codpro))) : null, nPartes = modo === "lista" && sel ? sel.partes.length : 1;
 
   useEffect(() => {
     api<Row[]>("erp/empresas").then((e) => { setEmpresas(e); if (e.length === 1) setF((x) => ({ ...x, codemp: String(e[0].codemp) })); })
@@ -57,13 +57,17 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
       if (!arquivo) return toast("Escolha o arquivo CSV.", "erro");
       csv = await lerCsv();
     } else if (!f.codemp) return toast("Escolha a empresa.", "erro");
-    if (modo === "lista" && !escopoAtivo(escopo)) return toast("Monte a lista de itens ou escolha “Todos os itens”.", "erro");
+    if (modo === "lista" && !sel) return toast("Monte a lista de itens ou escolha “Todos os itens”.", "erro");
     setSalvando(true);
     try {
       const emp = empresas?.find((e) => String(e.codemp) === f.codemp);
-      const r = await api<Row>("inventarios", { ...f, origem, csv, nomemp: emp?.nomemp, escopo: modo === "lista" ? escopo : null, programar, vezes: f.repetir ? f.vezes : 1 });
+      const lista = modo === "lista" && sel, partes = lista && sel.partes.length > 1
+        ? sel.partes.map((p, k) => ({ descricao: `${f.descricao.trim()} — parte ${k + 1}/${sel.partes.length}`, produtos: p.produtos, dataPrevista: p.dataPrevista, responsavel: p.responsavel || f.responsavel })) : undefined;
+      const escopo = lista && !partes ? { ...ESCOPO_VAZIO, produtos: sel.produtos, rotulo: sel.rotulo, filtros: sel.filtros } : null;
+      const r = await api<Row>("inventarios", { ...f, origem, csv, nomemp: emp?.nomemp, escopo, partes, rotulo: sel?.rotulo, filtros: sel?.filtros, programar, vezes: f.repetir && !partes ? f.vezes : 1 });
       aoCriar();
-      if (programar) { toast(r.ids.length > 1 ? `${r.ids.length} inventários programados.` : "Inventário programado."); fechar(); router.push("/inventario/programacao"); }
+      if (partes) { toast(`${r.ids.length} inventários ${programar ? "programados" : "abertos e com saldos congelados"}.`); fechar(); router.push(programar ? "/inventario/programacao" : "/"); }
+      else if (programar) { toast(r.ids.length > 1 ? `${r.ids.length} inventários programados.` : "Inventário programado."); fechar(); router.push("/inventario/programacao"); }
       else { toast("Inventário aberto e saldos congelados."); router.push(`/inventario/${r.id}`); }
     } catch (e) { toast((e as Error).message, "erro"); setSalvando(false); }
   }
@@ -118,17 +122,17 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
           <span className="mb-1.5 block text-[13px] font-medium">Itens a contar</span>
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
             {([["todos", "Todos os itens"], ["lista", "Lista personalizada"]] as const).map(([k, n]) => (
-              <button type="button" key={k} onClick={() => { setModo(k); if (k === "lista" && !escopoAtivo(escopo)) abrirLista(); }} className={seg(modo === k)}>{n}</button>
+              <button type="button" key={k} onClick={() => { setModo(k); if (k === "lista" && !sel) abrirLista(); }} className={seg(modo === k)}>{n}</button>
             ))}
           </div>
           {modo === "lista" && (
             <button type="button" onClick={abrirLista} className="mt-2 flex w-full items-center gap-3 rounded-lg border border-dashed border-brand-200 bg-brand-50/50 px-3 py-2.5 text-left transition hover:border-brand-500">
               <ListChecks className="size-5 shrink-0 text-brand-700" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium">{escopoAtivo(escopo) ? descreverEscopo(escopo) : "Montar lista por grupo, subgrupo, marca, tipo ou produto"}</span>
+                <span className="block truncate text-[13px] font-medium">{sel ? `${sel.rotulo}${sel.partes.length > 1 ? ` · em ${sel.partes.length} partes` : ""}` : "Montar lista: filtros, ordem e divisão em partes"}</span>
                 {resumo && <span className="block text-[12px] text-muted tabular">{resumo.itens.toLocaleString("pt-BR")} itens · {resumo.comSaldo.toLocaleString("pt-BR")} com saldo · {frsK(resumo.valor)}</span>}
               </span>
-              <span className="text-[12px] font-semibold text-brand-700">{escopoAtivo(escopo) ? "Editar" : "Montar"}</span>
+              <span className="text-[12px] font-semibold text-brand-700">{sel ? "Editar" : "Montar"}</span>
             </button>
           )}
         </div>
@@ -143,7 +147,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
               <label className="col-span-full flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={f.antecipar} onChange={(e) => setF({ ...f, antecipar: e.target.checked })} /><span><b>Pode antecipar no coletor</b><span className="block text-[12px] text-muted">Desligado, o coletor mostra o inventário mas só deixa começar na data prevista.</span></span></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Repetir"><select className={inputCls} value={f.repetir} onChange={(e) => setF({ ...f, repetir: e.target.value })}>{REPETIR.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
+              <Field label="Repetir" hint={nPartes > 1 ? "Não vale com a lista dividida em partes." : undefined}><select className={inputCls} disabled={nPartes > 1} value={nPartes > 1 ? "" : f.repetir} onChange={(e) => setF({ ...f, repetir: e.target.value })}>{REPETIR.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
               {f.repetir && <Field label="Quantas vezes"><input type="number" min={2} max={24} className={inputCls} value={f.vezes} onChange={(e) => setF({ ...f, vezes: e.target.value })} /></Field>}
             </div>
             <Field label="Observação"><input className={inputCls} value={f.obs} onChange={(e) => setF({ ...f, obs: e.target.value })} placeholder="Ex.: parar expedição às 16h" /></Field>
@@ -152,10 +156,10 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
 
         {erpErro && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-200">ERP indisponível: {erpErro}</p>}
         <Button type="submit" size="lg" className="w-full" loading={salvando}>
-          {programar ? <><CalendarPlus className="size-4" />{f.repetir ? `Programar ${f.vezes} inventários` : "Programar inventário"}</> : "Abrir inventário e congelar saldos"}
+          {programar ? <><CalendarPlus className="size-4" />{nPartes > 1 ? `Programar ${nPartes} inventários` : f.repetir ? `Programar ${f.vezes} inventários` : "Programar inventário"}</> : nPartes > 1 ? `Abrir ${nPartes} inventários e congelar saldos` : "Abrir inventário e congelar saldos"}
         </Button>
       </form>
-      <MontarLista aberto={listaAberta} fechar={() => setListaAberta(false)} prods={prods} erro={prevErro} escopo={escopo} aplicar={setEscopo} />
+      <MontarLista aberto={listaAberta} fechar={() => setListaAberta(false)} prods={prods} erro={prevErro} inicial={sel} programar={programar} dataBase={f.dataPrevista} usuarios={usuarios} aplicar={setSel} />
     </div>
   );
 }
