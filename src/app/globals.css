@@ -135,6 +135,8 @@ body.coletor button, body.coletor a, body.coletor label { touch-action: manipula
 .ent { margin-left: auto; font-size: 14.5px; font-weight: 650; } .ent.atr { color: #a51d39; } .ent.hj { color: var(--ok); } .kv .ent { margin-left: 0; }
 .pd .cl { font-size: 16.5px; font-weight: 600; margin-top: 2px; line-height: 1.25; } .pd .in, .rc small { font-size: 14.5px; color: var(--color-muted); margin-top: 3px; display: block; }
 .pd .ft { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.pd .l1 .lib { margin-left: auto; font-size: 14.5px; font-weight: 700; color: #3b3f9e; background: #e9eafb; border-radius: 10px; padding: 4px 9px; white-space: nowrap; } .pd .l1 .ord { font-size: 14px; font-weight: 700; color: var(--color-muted); min-width: 24px; }
+.pd .in .atr { color: #a51d39; font-weight: 650; } .pd .in .hj { color: var(--ok); font-weight: 650; }
 .tag { font-size: 13.5px; font-weight: 700; border-radius: 10px; padding: 5px 10px; background: var(--sv); } .tag.pcp { background: #e9eafb; color: #3b3f9e; } .tag.sep { background: #fdf1d8; color: #7a5200; } .tag.ok { background: #e2f3ea; color: var(--ok); } .tag.er { background: #fdeaee; color: #a51d39; } .tag.am { background: #f8efdc; color: #8a5a00; }
 .rc { border-radius: 24px; background: var(--color-brand-800); color: #fff; padding: 16px 18px; } .rc b { font-size: 23px; display: block; } .rc small { color: #fff; opacity: .85; } .rc .barra { background: #ffffff33; } .rc .barra i { background: #fff; }
 .cx { background: #fff; border-radius: 24px; padding: 16px 18px; font-size: 16px; } .cx h3 { font-size: 13.5px; color: var(--color-muted); font-weight: 650; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }

@@ -17,42 +17,49 @@ export default function Pagina() { return <Suspense><Fila /></Suspense>; }
 type Vista = { t: "lista" } | { t: "romaneio"; n: number } | { t: "ficha"; n: number; de?: number } | { t: "volumes"; n: number };
 const dm = (s?: string) => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "");
 const hojeIso = () => new Date().toLocaleDateString("sv-SE");
-function Entrega({ d }: { d: string }) {
+// "2026-11-27 07:55" -> "27/11 07:55"; só a data quando o Lieto não gravou a hora
+const dh = (s?: string) => (s ? `${dm(s)}${s.length > 10 ? ` ${s.slice(11, 16)}` : ""}` : "");
+function Entrega({ d, curta }: { d: string; curta?: boolean }) {
   if (!d) return null;
   const h = hojeIso();
-  return <span className={cx("ent", d < h && "atr", d === h && "hj")}>{d === h ? "Entrega hoje" : `Entrega ${dm(d)}`}</span>;
+  return <span className={cx(!curta && "ent", d < h && "atr", d === h && "hj")}>{d === h ? (curta ? "entrega hoje" : "Entrega hoje") : `${curta ? "entrega" : "Entrega"} ${dm(d)}`}</span>;
 }
-function Etapa({ x }: { x: Row }) {
+function etapa(x: Row) {
   if (x.conferencia === "EM ANDAMENTO" || x.conferencia === "AGUARDA GESTÃO") return <span className="tag sep">{x.id && x.usuario === sessao.usuario()?.nome ? "Com você" : `Com ${x.usuario}`}{x.feito ? ` · ${fq(x.feito.feito)} de ${fq(x.feito.total)}` : ""}{x.conferencia === "AGUARDA GESTÃO" ? " · falta" : ""}</span>;
   if (x.conferencia === "CONFERIDA") return <span className="tag ok">Conferido{x.pcp.con ? ` ${dm(x.pcp.con)}` : ""}{x.usuario ? ` · ${x.usuario}` : ""}{x.volumes ? ` · ${x.volumes} vol.` : ""}</span>;
-  if (x.conferencia) return <span className="tag">{x.conferencia.toLowerCase()}</span>;
+  // começada na tela do próprio Lieto: o coletor não abre, termina lá
+  if (x.conferencia === "ABERTA NO LIETO") return <span className="tag">Aberta no Lieto · termine lá{x.numide ? ` (nº ${Number(x.numide).toLocaleString("pt-BR")})` : ""}</span>;
+  if (x.conferencia) return <span className="tag">{x.conferencia[0] + x.conferencia.slice(1).toLowerCase()}</span>;
   // empresa com PCP (Sistema › Conferência): espera a liberação no Lieto. Nas outras, pedido pendente já é para separar.
   if (x.aguardaPcp) return <span className="tag am">Aguardando liberação no PCP</span>;
-  return <span className={cx("tag", x.pcp.pcp && "pcp")}>{x.pcp.pcp ? `Liberado no PCP ${dm(x.pcp.pcp)}` : "A separar"}</span>;
+  return x.liberado ? null : <span className="tag">A separar</span>; // liberado: a data já está na 1ª linha
 }
-function Cartao({ x, abrir, rom }: { x: Row; abrir: () => void; rom?: boolean }) {
+// A liberação do PCP (data e hora) fica na 1ª linha; sem ela, a entrega. pos = lugar na fila do PCP (design/pages/conferencia-pedidos_v3.html).
+function Cartao({ x, abrir, rom, pos }: { x: Row; abrir: () => void; rom?: boolean; pos?: number }) {
   const fora = !["PED", "FAT"].includes(x.situacao), outro = (x.conferencia && !x.id) || x.noRomaneio;
+  const et = fora ? <span className="tag er">Situação {x.situacao}</span> : etapa(x);
   return (
     <button className={cx("pd", x.aguardaPcp && "ap")} disabled={fora || !!outro} onClick={abrir}>
-      <div className="l1"><b>{x.pedido}</b>{rom ? x.ordem > 0 && <span className="tag">{x.ordem}º na carga</span> : x.romaneio > 0 && <span className="tag">Rom. {x.romaneio}</span>}<Entrega d={x.entrega} /></div>
+      <div className="l1">{pos ? <span className="ord">{pos}º</span> : null}<b>{x.pedido}</b>{rom && x.ordem > 0 && <span className="tag">{x.ordem}º na carga</span>}{x.liberado ? <span className="lib">Liberado {dh(x.liberado)}</span> : <Entrega d={x.entrega} />}</div>
       <div className="cl">{x.cliente}</div>
-      <div className="in">{[x.cidade, `${x.itens} ${x.itens === 1 ? "item" : "itens"}`, x.volumes > 0 && `${x.volumes} vol.`, x.peso > 0 && `${fq(Math.round(x.peso))} kg`].filter(Boolean).join(" · ")}</div>
-      <div className="ft">{fora ? <span className="tag er">Situação {x.situacao}</span> : <Etapa x={x} />}</div>
+      <div className="in">{[!rom && x.romaneio > 0 && `Rom. ${x.romaneio}`, x.cidade, `${x.itens} ${x.itens === 1 ? "item" : "itens"}`, x.volumes > 0 && `${x.volumes} vol.`, x.peso > 0 && `${fq(Math.round(x.peso))} kg`].filter(Boolean).join(" · ")}{x.liberado && x.entrega && <> · <Entrega d={x.entrega} curta /></>}</div>
+      {et && <div className="ft">{et}</div>}
     </button>
   );
 }
 
 function Fila() {
   const pedir = Number(useSearchParams().get("id") || 0), toast = useToast();
-  const [c, setC] = useState<Row | null>(null), [v, setV] = useState<Vista>({ t: "lista" }), [aba, setAba] = useState<"pedidos" | "romaneios">("pedidos"), [filtro, setFiltro] = useState("hoje");
-  const [b, setB] = useState(""), [l, setL] = useState<Row[] | null>(null), [roms, setRoms] = useState<Row[] | null>(null), [erro, setErro] = useState(""), [oc, setOc] = useState(false);
+  const [c, setC] = useState<Row | null>(null), [v, setV] = useState<Vista>({ t: "lista" }), [aba, setAba] = useState<"pedidos" | "romaneios">("pedidos");
+  const [b, setB] = useState(""), [l, setL] = useState<Row[] | null>(null), [lq, setLq] = useState(""), [roms, setRoms] = useState<Row[] | null>(null), [erro, setErro] = useState(""), [oc, setOc] = useState(false);
   const ler = useCallback(async () => {
     setErro("");
     try {
       if (aba === "romaneios") { setRoms(await api<Row[]>("conferencia/romaneios")); return; }
-      setL(await api<Row[]>(`conferencia/fila?${b.trim() ? `q=${encodeURIComponent(b.trim())}` : `filtro=${filtro}`}`));
+      // sem busca: a fila (só o que é para conferir, na ordem do PCP); a busca acha qualquer pedido
+      const q = b.trim(); setL(await api<Row[]>(`conferencia/fila${q ? `?q=${encodeURIComponent(q)}` : ""}`)); setLq(q);
     } catch (e) { setErro((e as Error).message); setL((x) => x ?? []); setRoms((x) => x ?? []); }
-  }, [aba, b, filtro]);
+  }, [aba, b]);
   useEffect(() => { if (pedir) api(`conferencia/${pedir}`).then(setC).catch((e) => setErro((e as Error).message)); }, [pedir]);
   useEffect(() => { if (v.t === "lista" && !c) { const t = setTimeout(ler, b ? 400 : 0); return () => clearTimeout(t); } }, [ler, v, c, b]);
   async function abrir(f: () => Promise<Row>) { if (oc) return; setOc(true); try { setC(await f()); } catch (e) { toast((e as Error).message, "erro"); } finally { setOc(false); } }
@@ -61,17 +68,17 @@ function Fila() {
   if (v.t === "ficha") return <Ficha n={v.n} voltar={() => setV(v.de ? { t: "romaneio", n: v.de } : { t: "lista" })} comecar={(x) => abrir(async () => (x.id ? api(`conferencia/${x.id}`) : api("conferencia", { pedido: x.pedido })))} oc={oc} />;
   if (v.t === "romaneio") return <Romaneio n={v.n} voltar={() => setV({ t: "lista" })} ficha={(p) => setV({ t: "ficha", n: p, de: v.n })} volumes={() => setV({ t: "volumes", n: v.n })} abrirJunto={() => abrir(async () => api("conferencia/romaneio", { romaneio: v.n }))} oc={oc} />;
   if (v.t === "volumes") return <VolumesRomaneio n={v.n} voltar={() => setV({ t: "romaneio", n: v.n })} />;
-  const filtros: [string, string][] = [["hoje", "Entrega até hoje"], ["amanha", "Amanhã"], ["todos", "Todos"], ["andamento", "Em andamento"]];
+  // lugar na fila: o que está com você vem antes e não conta
+  const pos = new Map<number, number>(); if (!lq) (l ?? []).filter((x) => !x.id).forEach((x, k) => pos.set(x.pedido, k + 1));
   return (
-    <Tela titulo="Conferência" sub={aba === "pedidos" ? (l ? `${l.length}${l.length >= 300 ? "+" : ""} pedido(s)` : "Carregando…") : roms ? `${roms.length} romaneio(s)` : "Carregando…"}>
+    <Tela titulo="Conferência" sub={aba === "pedidos" ? (l ? `${l.length}${l.length >= 300 ? "+" : ""} ${lq ? "pedido(s)" : "para conferir"}` : "Carregando…") : roms ? `${roms.length} romaneio(s)` : "Carregando…"}>
       <div className="abas2"><button className={cx(aba === "pedidos" && "sel")} onClick={() => setAba("pedidos")}>Pedidos</button><button className={cx(aba === "romaneios" && "sel")} onClick={() => setAba("romaneios")}>Romaneios</button></div>
       {aba === "pedidos" ? <>
         <div className="campo-ic"><ScanBarcode /><input enterKeyHint="search" placeholder="Pedido, cliente ou romaneio" value={b} onChange={(e) => setB(e.target.value)} /></div>
-        {!b.trim() && <div className="chips">{filtros.map(([k, n]) => <button key={k} className={cx(filtro === k && "sel")} onClick={() => setFiltro(k)}>{n}</button>)}</div>}
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
         {l === null && !erro && <Esqueleto classe="pd" altura={150} n={3} />}
-        {l?.length === 0 && !erro && <div className="vazio"><Check /><b>Nenhum pedido</b>{b ? "Confira o número ou o nome." : filtro === "hoje" ? "Nada com entrega até hoje. Veja \"Todos\"." : "Nada aqui."}</div>}
-        {l?.map((x) => <Cartao key={x.pedido} x={x} abrir={() => setV({ t: "ficha", n: x.pedido })} />)}
+        {l?.length === 0 && !erro && <div className="vazio"><Check /><b>{lq ? "Nenhum pedido" : "Nada para conferir"}</b>{lq ? "Confira o número ou o nome." : "Os pedidos entram aqui quando o PCP libera no Lieto."}</div>}
+        {l?.map((x) => <Cartao key={x.pedido} x={x} pos={pos.get(x.pedido)} abrir={() => setV({ t: "ficha", n: x.pedido })} />)}
       </> : <>
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
         {roms === null && !erro && <Esqueleto classe="pd" altura={130} n={3} />}

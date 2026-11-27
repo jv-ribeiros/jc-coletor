@@ -214,7 +214,7 @@ const rotas: [string, string, Handler][] = [
   ["POST", "retorno", ({ body, usuario }) => RT.registrar(body, usuario!)],
 
   // ---------- conferência de expedição ----------
-  ["GET", "conferencia/fila", ({ q }) => CF.fila(q)],
+  ["GET", "conferencia/fila", ({ q, usuario }) => CF.fila(q, usuario)],
   ["GET", "conferencia", () => CF.listar()],
   ["GET", "conferencia/minhas", ({ usuario }) => CF.minhas(usuario!)],
   ["POST", "conferencia/:id/falta", ({ p, body, usuario }) => CF.falta(Number(p[0]), body, usuario!)],

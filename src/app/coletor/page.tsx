@@ -24,6 +24,8 @@ const MODULOS = [
 
 // Padrão Carregando (aprovado): cada bloco tem o lugar reservado desde a 1ª imagem; as rotinas vêm da última liberação guardada;
 // a 1ª carga troca tudo de uma vez quando as respostas chegam (ou em 3 s); voltar mostra o último resultado na hora.
+// a hora da liberação do PCP; de outro dia, com a data
+const liberado = (s: string) => { const d = s.slice(0, 10) === new Date().toLocaleDateString("sv-SE") ? "" : `${s.slice(8, 10)}/${s.slice(5, 7)}`; return [d, s.slice(11, 16)].filter(Boolean).join(" "); };
 export default function ColetorInicio() {
   const u = sessao.usuario(), conf = useConformidade(), pode = usePode(), liberados = MODULOS.filter((m) => pode([m.rotina]));
   const cf = pode(["conferencia"]), rb = pode(["recebimento"]), iv = pode(["inventario"]);
@@ -51,8 +53,8 @@ export default function ColetorInicio() {
         {cf && <>
           <div className="secao">Próximos pedidos</div>
           {mostrar && fila ? (fila.length
-            ? <Link href="/coletor/conferencia" className="linha"><div><b>{fila.length} {fila.length === 1 ? "pedido esperando" : fila.length >= 300 ? "ou mais esperando" : "pedidos esperando"}</b><small>Próximo: {fila[0].pedido} · {fila[0].cliente}</small></div><ChevronRight /></Link>
-            : <Link href="/coletor/conferencia" className="linha"><div><b>Nenhum pedido esperando</b><small>A fila está vazia agora.</small></div><ChevronRight /></Link>)
+            ? <Link href="/coletor/conferencia" className="linha"><div><b>{fila.length}{fila.length >= 300 ? "+" : ""} para conferir</b><small>Próximo: {fila[0].pedido} · {fila[0].liberado ? `liberado ${liberado(fila[0].liberado)}` : fila[0].cliente}</small></div><ChevronRight /></Link>
+            : <Link href="/coletor/conferencia" className="linha"><div><b>Nada para conferir</b><small>Os pedidos entram quando o PCP libera no Lieto.</small></div><ChevronRight /></Link>)
             : filaC.erro && !fila ? <button className="linha" onClick={ler}><div><b>Pedidos não carregaram</b><small>Toque para tentar de novo.</small></div></button>
             : <span className={`${sk} linha`} />}</>}
         {pode.pronto && !liberados.length && <div className="vazio"><b>Nenhuma rotina liberada</b>Peça a um administrador.</div>}

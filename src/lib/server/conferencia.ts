@@ -53,14 +53,15 @@ const gravarItens = (id: number, itens: Item[], status: string) => db().prepare(
 const noLieto = async (t: Conexao, numped: number) => (await consultar(t, "select first 1 numide, datcon, datenc from conferencias1 where numped = ? order by numide desc", [numped]))[0];
 const final = (i: Item) => (i.numrec > 0 ? i.rec : i.con);
 
-// Fila: pedidos de um romaneio, um pedido, ou os pendentes sem conferência. Com entrega, cidade, tamanho e o PCP do Lieto (PEDIDOS1).
-// filtro (sem romaneio/pedido): hoje = entrega até hoje · amanha · todos · andamento (abertos aqui). q = número de pedido/romaneio ou nome do cliente.
+// Linhas da fila: pedidos de um romaneio, um pedido, a busca ou a fila do coletor. Com entrega, cidade, tamanho e o PCP do Lieto (PEDIDOS1).
 const dia = (v: unknown) => (v instanceof Date ? iso(v) : v ? String(v).slice(0, 10) : "");
+// data e hora (o DATPCP é timestamp); meia-noite = o Lieto gravou só o dia
+const diaHora = (v: unknown) => { if (!(v instanceof Date)) return v ? String(v).slice(0, 16).replace("T", " ") : ""; const h = v.getHours(), m = v.getMinutes(); return h || m ? `${iso(v)} ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}` : iso(v); };
 const CAMPOS = `a.numdoc, a.codemp, a.numrom, a.ordrom, a.sitdoc, a.datdoc, a.datent, a.datpcp, a.datsep, a.datcon, a.datfat, a.datexp, a.qntvol, a.pesbru, b.nomcli, b.cidcli, b.estcli,
   (select first 1 r.nomrot from rotas r where r.codrot = a.codrot) nomrot, (select count(*) from pedidos2 x where x.numdoc = a.numdoc and x.baiest = 'S') n,
   (select max(h.numide) from conferencias1 h where h.numped = a.numdoc) h`;
-async function linhas(c: Conexao, where: string, args: unknown[]) {
-  const l = await consultar(c, `select first 300 ${CAMPOS} from pedidos1 a left join clientes b on b.codcli = a.codcli where ${where} order by a.datent, a.numrom, a.ordrom, a.numdoc`, args);
+async function linhas(c: Conexao, where: string, args: unknown[], ordem = "a.datent, a.numrom, a.ordrom, a.numdoc") {
+  const l = await consultar(c, `select first 300 ${CAMPOS} from pedidos1 a left join clientes b on b.codcli = a.codcli where ${where} order by ${ordem}`, args);
   const hs = l.map((x) => num(x.H)).filter(Boolean), est = new Map<number, Row>();
   if (hs.length) for (const h of await consultar(c, `select numide, datcon, datenc, codcon from conferencias1 where numide in (${hs.join(",")})`)) est.set(num(h.NUMIDE), h);
   const aqui = new Map((db().prepare("SELECT pedido, MAX(fim_em) fim, usuario FROM conferencias WHERE status = 'CONFERIDA' AND pedido IS NOT NULL GROUP BY pedido").all() as Row[]).map((x) => [x.pedido, x]));
@@ -70,23 +71,31 @@ async function linhas(c: Conexao, where: string, args: unknown[]) {
     return { pedido: n, romaneio: num(x.NUMROM), ordem: num(x.ORDROM), situacao: txt(x.SITDOC), data: x.DATDOC, entrega: dia(x.DATENT), cliente: txt(x.NOMCLI), cidade: [txt(x.CIDCLI), txt(x.ESTCLI)].filter(Boolean).join("/"), rota: txt(x.NOMROT),
       itens: num(x.N), volumes: num(x.QNTVOL), peso: num(x.PESBRU), codemp: num(x.CODEMP), usaPcp,
       // parado no PCP: empresa que libera pelo PCP, sem DATPCP e sem conferência (a que já começou segue na fila)
-      aguardaPcp: usaPcp && !x.DATPCP && !a && !h, pcp: { pcp: dia(x.DATPCP), sep: dia(x.DATSEP), con: dia(x.DATCON), fat: dia(x.DATFAT), exp: dia(x.DATEXP) },
+      aguardaPcp: usaPcp && !x.DATPCP && !a && !h, liberado: diaHora(x.DATPCP), numide: num(x.H), codfun: a ? num(a.codfun) : 0, pcp: { pcp: dia(x.DATPCP), sep: dia(x.DATSEP), con: dia(x.DATCON), fat: dia(x.DATFAT), exp: dia(x.DATEXP) },
       conferencia: a ? (a.aguarda_em ? "AGUARDA GESTÃO" : "EM ANDAMENTO") : h ? (h.DATCON ? "CONFERIDA" : h.DATENC ? "ENCERRADA" : "ABERTA NO LIETO") : "",
-      usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : fe?.usuario || "", desde: a?.criado_em || "", feito: a ? progresso(a) : null, id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null };
+      usuario: a ? `${a.usuario}${a.pedido == null ? ` (romaneio ${a.romaneio})` : ""}` : fe?.usuario || "", desde: a?.criado_em || "", feito: a ? progresso(a) : null, id: a && a.pedido != null ? a.id : null, noRomaneio: !!a && a.pedido == null, conferidoAqui: !!fe };
   });
 }
 const progresso = (a: Row) => { const it = JSON.parse(a.itens) as Item[]; return separando(a) ? { feito: r4(it.reduce((s, i) => s + i.con, 0)), total: r4(it.reduce((s, i) => s + i.qtd, 0)) } : { feito: it.filter((i) => final(i) > 0).length, total: it.length }; };
-export async function fila(q: URLSearchParams) {
-  const rom = Number(q.get("romaneio") || 0), ped = Number(q.get("pedido") || 0), f = q.get("filtro") || "", busca = (q.get("q") || "").trim();
+// A fila do coletor (design/pages/conferencia-pedidos_v3.html): só o que é para conferir agora, na ordem do PCP.
+// Fora: conferido (continua PED até faturar), encerrado e "aberta no Lieto" (qualquer CONFERENCIAS1), o parado no PCP nas empresas
+// que liberam por ele, o que está com outra pessoa e o que espera a gestão. O que está com você vem primeiro.
+// A busca (número, romaneio ou cliente) e o romaneio continuam mostrando tudo, com a situação de cada um.
+export async function fila(q: URLSearchParams, u?: Usuario | null) {
+  const rom = Number(q.get("romaneio") || 0), ped = Number(q.get("pedido") || 0), busca = (q.get("q") || "").trim();
   return comConexao(async (c) => {
     if (rom) return linhas(c, "a.numrom = ?", [rom]);
     if (ped) return linhas(c, "a.numdoc = ?", [ped]);
     if (/^\d+$/.test(busca)) return linhas(c, "(a.numdoc = ? or a.numrom = ?)", [Number(busca), Number(busca)]);
     if (busca.length > 1) return linhas(c, "a.sitdoc = 'PED' and a.datfat is null and upper(b.nomcli) containing ?", [busca.toUpperCase()]);
-    if (f === "andamento") { const ns = abertas().flatMap((a) => (a.pedido != null ? [a.pedido] : (JSON.parse(a.pedidos) as Ped[]).map((x) => x.pedido))); return ns.length ? linhas(c, `a.numdoc in (${ns.map(Number).join(",")})`, []) : []; }
-    // a fila não mostra o pedido parado no PCP; a busca pelo número ou pelo cliente acha, e o romaneio mostra apagado
-    const base = "a.sitdoc = 'PED' and a.datfat is null";
-    return (await linhas(c, f === "hoje" ? `${base} and a.datent <= current_date` : f === "amanha" ? `${base} and a.datent = current_date + 1` : base, [])).filter((x) => !x.aguardaPcp);
+    // o filtro vai no SQL para os conferidos não comerem o limite de 300; o pedido que já começou aqui segue mesmo sem DATPCP
+    const pcp = pcpEmpresas(), comecados = abertas().flatMap((a) => (a.pedido != null ? [Number(a.pedido)] : []));
+    let w = "a.sitdoc = 'PED' and a.datfat is null and a.datcon is null and not exists (select 1 from conferencias1 h where h.numped = a.numdoc)";
+    if (pcp.length) w += ` and (a.datpcp is not null or coalesce(a.codemp, 0) not in (${pcp.join(",")})${comecados.length ? ` or a.numdoc in (${comecados.join(",")})` : ""})`;
+    const meu = (x: Row) => !!x.id && !!u && x.codfun === u.codfun;
+    const l = (await linhas(c, w, [], "coalesce(a.datpcp, a.datent), a.numdoc"))
+      .filter((x) => !x.aguardaPcp && !x.noRomaneio && !x.conferidoAqui && (!x.conferencia || (x.conferencia === "EM ANDAMENTO" && meu(x))));
+    return l.sort((x, y) => Number(meu(y)) - Number(meu(x)));
   });
 }
 
