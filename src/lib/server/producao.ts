@@ -14,7 +14,7 @@ import { db, getConfig } from "./db";
 import { empresaDe } from "./empresas";
 import * as ddl from "./ddl";
 import * as erp from "./erp";
-import { adicionais, cods, fatores } from "./cadastro";
+import { adicionais, cods, fatores, palete } from "./cadastro";
 import { limparObs, obsErp, Erro, agora, evento, r4, r6, type Usuario } from "./comum";
 import { comConexao, consultar, dataDe, emTransacao, executar, num, txt } from "./fb";
 
@@ -211,6 +211,37 @@ export function listar(q: URLSearchParams) {
 export function minhas(u: Usuario) {
   return db().prepare(`SELECT id, codpro, nompro, unipro, qtd, lote, data, status, erro, numide, criado_em FROM producoes
     WHERE codfun = ? AND criado_em >= ? ORDER BY id DESC LIMIT 200`).all(u.codfun, agora().slice(0, 10));
+}
+
+// Folhas de identificação dos paletes (meia A4 por palete: produto, validade e quantidade). A divisão é feita na tela: aqui só os dados.
+// Validade: a da última impressão desta produção (producoes.validade) vem primeiro; senão a do lote no Lieto (LOTESENTRADAS.DATVEN).
+// producoes.validade guarda "AAAA-MM-DD", "AAAA-MM" (só mês/ano) ou "sem" (produto sem validade). Nada é gravado no Lieto.
+export async function paletes(id: number) {
+  const p = obter(id);
+  if (p.status === "CANCELADA") throw new Erro("Esta produção foi cancelada: não há palete para identificar.");
+  const ls = p.lote ? await lotes(p.codpro).catch(() => []) : [];
+  return {
+    id: p.id, codpro: p.codpro, nompro: p.nompro, unipro: p.unipro, qtd: p.qtd, lote: p.lote || "", data: p.data, status: p.status, numide: p.numide ?? null,
+    validade: p.validade || null,
+    validade_lote: ls.find((l) => l.lote.toUpperCase() === String(p.lote).toUpperCase())?.validade ?? null,
+    palete: palete(p.codpro),
+  };
+}
+
+// Chamado a cada impressão: guarda a validade usada (a reimpressão já vem com ela) e deixa no histórico da produção.
+export function imprimirPaletes(id: number, body: Row, u: Usuario) {
+  const p = obter(id);
+  if (p.status === "CANCELADA") throw new Erro("Esta produção foi cancelada: não há palete para identificar.");
+  const v = String(body.validade ?? "").trim(), m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v);
+  if (v !== "sem") {
+    const [a, me, d] = m ? [Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 1] : [0, 0, 0];
+    if (!m || a < 2000 || a > 2100 || me < 1 || me > 12 || new Date(Date.UTC(a, me - 1, d)).getUTCDate() !== d) throw new Erro("Validade inválida: use dia/mês/ano ou mês/ano.");
+  }
+  const folhas = Math.max(0, Math.floor(Number(body.folhas) || 0));
+  if (v !== (p.validade || "")) db().prepare("UPDATE producoes SET validade = ? WHERE id = ?").run(v, id);
+  const txtVal = v === "sem" ? "produto sem validade" : `validade ${v.split("-").reverse().join("/")}`;
+  evento("producao", id, u, "IMPRIMIU FOLHAS DOS PALETES", `${folhas} ${folhas === 1 ? "folha" : "folhas"} · ${txtVal}`);
+  return { validade: v };
 }
 
 export function historico(id: number) {

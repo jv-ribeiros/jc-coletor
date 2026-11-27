@@ -26,12 +26,14 @@ function Etapa({ x }: { x: Row }) {
   if (x.conferencia === "EM ANDAMENTO" || x.conferencia === "AGUARDA GESTÃO") return <span className="tag sep">{x.id && x.usuario === sessao.usuario()?.nome ? "Com você" : `Com ${x.usuario}`}{x.feito ? ` · ${fq(x.feito.feito)} de ${fq(x.feito.total)}` : ""}{x.conferencia === "AGUARDA GESTÃO" ? " · falta" : ""}</span>;
   if (x.conferencia === "CONFERIDA") return <span className="tag ok">Conferido{x.pcp.con ? ` ${dm(x.pcp.con)}` : ""}{x.usuario ? ` · ${x.usuario}` : ""}{x.volumes ? ` · ${x.volumes} vol.` : ""}</span>;
   if (x.conferencia) return <span className="tag">{x.conferencia.toLowerCase()}</span>;
-  return <span className={cx("tag", x.pcp.pcp && "pcp")}>{x.pcp.pcp ? `Liberado no PCP ${dm(x.pcp.pcp)}` : "Sem PCP"}</span>;
+  // empresa com PCP (Sistema › Conferência): espera a liberação no Lieto. Nas outras, pedido pendente já é para separar.
+  if (x.aguardaPcp) return <span className="tag am">Aguardando liberação no PCP</span>;
+  return <span className={cx("tag", x.pcp.pcp && "pcp")}>{x.pcp.pcp ? `Liberado no PCP ${dm(x.pcp.pcp)}` : "A separar"}</span>;
 }
 function Cartao({ x, abrir, rom }: { x: Row; abrir: () => void; rom?: boolean }) {
   const fora = !["PED", "FAT"].includes(x.situacao), outro = (x.conferencia && !x.id) || x.noRomaneio;
   return (
-    <button className="pd" disabled={fora || !!outro} onClick={abrir}>
+    <button className={cx("pd", x.aguardaPcp && "ap")} disabled={fora || !!outro} onClick={abrir}>
       <div className="l1"><b>{x.pedido}</b>{rom ? x.ordem > 0 && <span className="tag">{x.ordem}º na carga</span> : x.romaneio > 0 && <span className="tag">Rom. {x.romaneio}</span>}<Entrega d={x.entrega} /></div>
       <div className="cl">{x.cliente}</div>
       <div className="in">{[x.cidade, `${x.itens} ${x.itens === 1 ? "item" : "itens"}`, x.volumes > 0 && `${x.volumes} vol.`, x.peso > 0 && `${fq(Math.round(x.peso))} kg`].filter(Boolean).join(" · ")}</div>
@@ -109,18 +111,20 @@ function Ficha({ n, voltar, comecar, oc }: { n: number; voltar: () => void; come
   const [d, setD] = useState<Row | null>(null), [erro, setErro] = useState("");
   useEffect(() => { api(`conferencia/pedido/${n}`).then(setD).catch((e) => setErro((e as Error).message)); }, [n]);
   const meu = d && d.id, outro = d && ((d.conferencia && !d.id) || d.noRomaneio), fora = d && !["PED", "FAT"].includes(d.situacao);
-  const etapas: [string, string, boolean][] = d ? [["Pedido", d.criado ? dm(String(d.criado).slice(0, 10)) : "", true], ["Liberado no PCP", dm(d.pcp.pcp), !!d.pcp.pcp], ["Separação", dm(d.pcp.sep), !!d.pcp.sep], ["Conferência", dm(d.pcp.con), !!d.pcp.con], ["Faturado", dm(d.pcp.fat), !!d.pcp.fat], ["Expedido", dm(d.pcp.exp), !!d.pcp.exp]] : [];
+  // sem PCP na empresa, a etapa "Liberado no PCP" nunca acontece: sai da linha do tempo (a não ser que o Lieto tenha a data)
+  const comPcp = !!d && (d.usaPcp || !!d.pcp.pcp);
+  const etapas: [string, string, boolean][] = d ? [["Pedido", d.criado ? dm(String(d.criado).slice(0, 10)) : "", true], ...(comPcp ? [["Liberado no PCP", dm(d.pcp.pcp), !!d.pcp.pcp] as [string, string, boolean]] : []), ["Separação", dm(d.pcp.sep), !!d.pcp.sep], ["Conferência", dm(d.pcp.con), !!d.pcp.con], ["Faturado", dm(d.pcp.fat), !!d.pcp.fat], ["Expedido", dm(d.pcp.exp), !!d.pcp.exp]] : [];
   const prox = etapas.findIndex((e) => !e[2]);
   return (
     <Tela titulo={`Pedido ${n}`} sub={d ? [d.romaneio > 0 && `Romaneio ${d.romaneio}`, d.ordem > 0 && `${d.ordem}º na carga`].filter(Boolean).join(" · ") : ""} voltar={voltar}
-      rodape={d && <BotaoG disabled={oc || !!outro || !!fora} onClick={() => comecar(d)}>{oc ? "Abrindo…" : meu ? (d.usuario === sessao.usuario()?.nome ? "Continuar a separar" : `Continuar · ${d.usuario}`) : outro ? `Com ${d.usuario}` : fora ? `Situação ${d.situacao}` : d.conferencia ? "Já conferido" : "Começar a separar"}</BotaoG>}>
+      rodape={d && <BotaoG disabled={oc || !!outro || !!fora || d.aguardaPcp} onClick={() => comecar(d)}>{oc ? "Abrindo…" : meu ? (d.usuario === sessao.usuario()?.nome ? "Continuar a separar" : `Continuar · ${d.usuario}`) : outro ? `Com ${d.usuario}` : fora ? `Situação ${d.situacao}` : d.conferencia ? "Já conferido" : d.aguardaPcp ? "Aguardando liberação no PCP" : "Começar a separar"}</BotaoG>}>
       {erro && <div className="aviso-e">{erro}</div>}
       {!d && !erro && <div className="pd animate-pulse" style={{ height: 200 }} />}
       {d && <>
         <div className="cx"><h3>Cliente</h3><div className="text-[18px] font-semibold">{d.cliente}</div>
           <div className="kv">{d.cidade && <><span>Cidade</span><b>{d.cidade}</b></>}{d.entrega && <><span>Entrega</span><b><Entrega d={d.entrega} /></b></>}{d.vendedor && <><span>Vendedor</span><b>{d.vendedor}</b></>}{d.rota && <><span>Rota</span><b>{d.rota}</b></>}
             <span>Tamanho</span><b>{[`${d.itens} itens`, d.volumes > 0 && `${d.volumes} vol.`, d.peso > 0 && `${fq(Math.round(d.peso))} kg`].filter(Boolean).join(" · ")}</b></div></div>
-        <div className="cx"><h3>PCP do Lieto</h3><div className="tm">{etapas.map(([nome, data, f], k) => <div key={nome} className={cx(f && "f1", k === prox && "ag")}><i />{nome}<small>{data || "—"}</small></div>)}</div></div>
+        <div className="cx"><h3>{comPcp ? "PCP do Lieto" : "Andamento no Lieto"}</h3><div className="tm">{etapas.map(([nome, data, f], k) => <div key={nome} className={cx(f && "f1", k === prox && "ag")}><i />{nome}<small>{data || "—"}</small></div>)}</div></div>
         {d.obs && <div className="cx"><h3>Observação do pedido</h3><div className="whitespace-pre-wrap">{d.obs}</div></div>}
         <div className="cx"><h3>Itens · em ordem de local</h3>{!d.lista.length && <div>Sem itens.</div>}
           {(d.lista as Row[]).map((i) => <div key={i.codpro} className="it"><span>{i.local || "—"}</span><span>{i.nompro}</span><b>{fq(i.qtd)} {i.unipro}</b></div>)}</div>

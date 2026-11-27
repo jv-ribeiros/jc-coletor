@@ -22,7 +22,7 @@ export default function Painel() {
 
   const modulos = [
     { href: "/inventario", icone: Warehouse, nome: "Inventário", texto: "Contagem, recontagem, auditoria e ajuste de estoque.", rotina: "inventario",
-      info: inv ? `${inv.filter((i) => !["ENCERRADO", "PROGRAMADO"].includes(i.etapa)).length} em andamento · ${inv.filter((i) => i.etapa === "PROGRAMADO").length} programado(s)` : "…" },
+      info: inv ? `${inv.filter((i) => !["ENCERRADO", "CANCELADO", "PROGRAMADO"].includes(i.etapa)).length} em andamento · ${inv.filter((i) => i.etapa === "PROGRAMADO").length} programado(s)` : "…" },
     { href: "/producao", icone: Factory, nome: "Produção", texto: "Acompanhar o que foi apontado no coletor.", rotina: "producao",
       info: prod ? `Hoje: ${prodHoje.filter((p) => p.status === "LANCADA").length} lançada(s), ${fq(prodHoje.filter((p) => p.status === "LANCADA").reduce((s, p) => s + p.qtd, 0))} un.` : "…",
       alerta: nPend ? `${nPend} aguardando lançamento` : "" },

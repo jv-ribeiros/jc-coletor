@@ -9,8 +9,19 @@ import { Button, Field, cx, inputCls, useToast } from "@/components/ui";
 import { ESCOPO_VAZIO } from "@/lib/escopo";
 import { api, frsK, type Row } from "@/lib/client";
 
-const REPETIR = [["", "Não repetir"], ["7", "Toda semana"], ["14", "A cada 15 dias"], ["mensal", "Todo mês"], ["trimestral", "A cada 3 meses"]] as const;
+const REPETIR = [["", "Não repetir"], ["util", "Todo dia útil (seg. a sex.)"], ["1", "Todo dia"], ["7", "Toda semana"], ["14", "A cada 15 dias"], ["mensal", "Todo mês"], ["trimestral", "A cada 3 meses"]] as const;
+// as mesmas regras do servidor, só para mostrar o intervalo que vai ser criado
+const somaDias = (iso: string, n: number) => { const [a, m, d] = iso.split("-").map(Number); return new Date(a, m - 1, d + n).toLocaleDateString("sv-SE"); };
+const util = (iso: string) => { const [a, m, d] = iso.split("-").map(Number), w = new Date(a, m - 1, d).getDay(); return w > 0 && w < 6; };
+function ultimaData(regra: string, ini: string, n: number) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || n < 1) return "";
+  if (regra === "util") { let d = ini, k = 0; while (!util(d)) d = somaDias(d, 1); while (++k < n) { d = somaDias(d, 1); while (!util(d)) d = somaDias(d, 1); } return d; }
+  if (regra === "mensal" || regra === "trimestral") { const [a, m, d] = ini.split("-").map(Number), q = (n - 1) * (regra === "mensal" ? 1 : 3), ult = new Date(a, m + q, 0).getDate(); return new Date(a, m - 1 + q, Math.min(d, ult)).toLocaleDateString("sv-SE"); }
+  return somaDias(ini, (n - 1) * Number(regra));
+}
+const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
+const nPartesDe = (modo: string, sel: Selecao | null) => (modo === "lista" && sel ? sel.partes.length : 1);
 export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: "agora" | "programar"; fechar: () => void; aoCriar: () => void }) {
   const router = useRouter(), toast = useToast(), usuarios = useUsuariosLieto();
   const [quando, setQuando] = useState(modoInicial);
@@ -18,7 +29,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
   const [empresas, setEmpresas] = useState<Row[] | null>(null);
   const [erpErro, setErpErro] = useState("");
   const amanha = new Date(Date.now() + 864e5).toLocaleDateString("sv-SE");
-  const [f, setF] = useState({ descricao: "", codemp: "", dataSaldo: new Date().toLocaleDateString("sv-SE"), etapa: "CONTAGEM", dataPrevista: amanha, responsavel: "", repetir: "", vezes: "6", obs: "", antecipar: true });
+  const [f, setF] = useState({ descricao: "", codemp: "", dataSaldo: new Date().toLocaleDateString("sv-SE"), etapa: "CONTAGEM", dataPrevista: amanha, responsavel: "", repetir: "", vezes: "6", fixa: false, obs: "", antecipar: true });
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [modo, setModo] = useState<"todos" | "lista">("todos");
@@ -42,6 +53,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
       setProds(linhas.map(deLinha));
     } catch (e) { setPrevErro((e as Error).message); }
   }
+  const repete = !!f.repetir && nPartesDe(modo, sel) <= 1, vezes = Number(f.vezes) || 0;
   const resumo = prods && sel ? resumoLista(prods.filter((p) => new Set(sel.produtos).has(p.codpro))) : null, nPartes = modo === "lista" && sel ? sel.partes.length : 1;
 
   useEffect(() => {
@@ -64,9 +76,11 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
       const lista = modo === "lista" && sel, partes = lista && sel.partes.length > 1
         ? sel.partes.map((p, k) => ({ descricao: `${f.descricao.trim()} — parte ${k + 1}/${sel.partes.length}`, produtos: p.produtos, dataPrevista: p.dataPrevista, responsavel: p.responsavel || f.responsavel })) : undefined;
       const escopo = lista && !partes ? { ...ESCOPO_VAZIO, produtos: sel.produtos, rotulo: sel.rotulo, filtros: sel.filtros } : null;
-      const r = await api<Row>("inventarios", { ...f, origem, csv, nomemp: emp?.nomemp, escopo, partes, rotulo: sel?.rotulo, filtros: sel?.filtros, programar, vezes: f.repetir && !partes ? f.vezes : 1 });
+      const fixa = programar && !!f.repetir && f.fixa && !partes;
+      const r = await api<Row>("inventarios", { ...f, origem, csv, nomemp: emp?.nomemp, escopo, partes, rotulo: sel?.rotulo, filtros: sel?.filtros, programar, fixa, vezes: f.repetir && !partes ? f.vezes : 1 });
       aoCriar();
-      if (partes) { toast(`${r.ids.length} inventários ${programar ? "programados" : "abertos e com saldos congelados"}.`); fechar(); router.push(programar ? "/inventario/programacao" : "/"); }
+      if (fixa) { toast("Programação fixa criada. O próximo já está na agenda."); fechar(); router.push("/inventario/programacao"); }
+      else if (partes) { toast(`${r.ids.length} inventários ${programar ? "programados" : "abertos e com saldos congelados"}.`); fechar(); router.push(programar ? "/inventario/programacao" : "/"); }
       else if (programar) { toast(r.ids.length > 1 ? `${r.ids.length} inventários programados.` : "Inventário programado."); fechar(); router.push("/inventario/programacao"); }
       else { toast("Inventário aberto e saldos congelados."); router.push(`/inventario/${r.id}`); }
     } catch (e) { toast((e as Error).message, "erro"); setSalvando(false); }
@@ -147,8 +161,18 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
               <label className="col-span-full flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={f.antecipar} onChange={(e) => setF({ ...f, antecipar: e.target.checked })} /><span><b>Pode antecipar no coletor</b><span className="block text-[12px] text-muted">Desligado, o coletor mostra o inventário mas só deixa começar na data prevista.</span></span></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Repetir" hint={nPartes > 1 ? "Não vale com a lista dividida em partes." : undefined}><select className={inputCls} disabled={nPartes > 1} value={nPartes > 1 ? "" : f.repetir} onChange={(e) => setF({ ...f, repetir: e.target.value })}>{REPETIR.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
-              {f.repetir && <Field label="Quantas vezes"><input type="number" min={2} max={24} className={inputCls} value={f.vezes} onChange={(e) => setF({ ...f, vezes: e.target.value })} /></Field>}
+              <Field label="Repetir" hint={nPartes > 1 ? "Não vale com a lista dividida em partes." : f.repetir === "util" ? "Feriado não sai: exclua o do dia e entra o seguinte." : undefined}><select className={inputCls} disabled={nPartes > 1} value={nPartes > 1 ? "" : f.repetir} onChange={(e) => setF({ ...f, repetir: e.target.value })}>{REPETIR.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
+              {repete && <div>
+                <span className="mb-1.5 block text-[13px] font-medium">Até quando</span>
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                  <button type="button" onClick={() => setF({ ...f, fixa: false })} className={seg(!f.fixa)}>Quantas vezes</button>
+                  <button type="button" onClick={() => setF({ ...f, fixa: true })} className={seg(f.fixa)}>Fixa</button>
+                </div>
+                {/* Fixa não cria centenas de inventários: só o próximo. Agenda cheia de dias futuros vira ruído. */}
+                {f.fixa ? <p className="mt-1.5 text-[12px] text-muted">Até você encerrar. Fica sempre o próximo na agenda; quando ele começa, entra o seguinte. Dia pulado fica como vencido, sem acumular outros.</p>
+                  : <><input type="number" min={2} max={60} className={cx(inputCls, "mt-1.5")} value={f.vezes} onChange={(e) => setF({ ...f, vezes: e.target.value })} />
+                    <p className="mt-1 text-[12px] text-muted">Até 60.{vezes >= 2 && vezes <= 60 && ultimaData(f.repetir, f.dataPrevista, vezes) ? ` Cria os ${vezes} agora: ${dm(ultimaData(f.repetir, f.dataPrevista, 1))} a ${dm(ultimaData(f.repetir, f.dataPrevista, vezes))}.` : ""}</p></>}
+              </div>}
             </div>
             <Field label="Observação"><input className={inputCls} value={f.obs} onChange={(e) => setF({ ...f, obs: e.target.value })} placeholder="Ex.: parar expedição às 16h" /></Field>
           </div>
@@ -156,7 +180,7 @@ export function NovoInventario({ modoInicial, fechar, aoCriar }: { modoInicial: 
 
         {erpErro && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-900 ring-1 ring-amber-200">ERP indisponível: {erpErro}</p>}
         <Button type="submit" size="lg" className="w-full" loading={salvando}>
-          {programar ? <><CalendarPlus className="size-4" />{nPartes > 1 ? `Programar ${nPartes} inventários` : f.repetir ? `Programar ${f.vezes} inventários` : "Programar inventário"}</> : nPartes > 1 ? `Abrir ${nPartes} inventários e congelar saldos` : "Abrir inventário e congelar saldos"}
+          {programar ? <><CalendarPlus className="size-4" />{nPartes > 1 ? `Programar ${nPartes} inventários` : repete && f.fixa ? "Criar programação fixa" : repete ? `Programar ${f.vezes} inventários` : "Programar inventário"}</> : nPartes > 1 ? `Abrir ${nPartes} inventários e congelar saldos` : "Abrir inventário e congelar saldos"}
         </Button>
       </form>
       <MontarLista aberto={listaAberta} fechar={() => setListaAberta(false)} prods={prods} erro={prevErro} inicial={sel} programar={programar} dataBase={f.dataPrevista} usuarios={usuarios} aplicar={setSel} />

@@ -87,12 +87,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_conf_rom ON conferencias (romaneio) WHERE p
 CREATE TABLE IF NOT EXISTS conf_volumes (id INTEGER PRIMARY KEY, romaneio INTEGER, pedido INTEGER, esperado INTEGER, contado INTEGER, corrigido INTEGER, usuario TEXT, em TEXT);
 CREATE TABLE IF NOT EXISTS conf_leituras (uid TEXT PRIMARY KEY, conf_id INTEGER, codpro TEXT, qtd REAL, modo TEXT, usuario TEXT, em TEXT);
 CREATE TABLE IF NOT EXISTS sessoes (token TEXT PRIMARY KEY, codfun INTEGER, nome TEXT, nomfun TEXT, criado_em TEXT, visto_em TEXT);
+CREATE TABLE IF NOT EXISTS inv_fixas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, regra TEXT NOT NULL, inicio TEXT NOT NULL, ultima TEXT, codemp INTEGER, nomemp TEXT, escopo TEXT,
+  etapa TEXT, responsavel TEXT, antecipar INTEGER DEFAULT 1, obs TEXT, ativa INTEGER DEFAULT 1, criada_por TEXT, criada_em TEXT, encerrada_por TEXT, encerrada_em TEXT);
 `;
 
 // colunas adicionadas depois da 1ª versão (bancos existentes são atualizados)
 const COLUNAS = ["ALTER TABLE conferencias ADD COLUMN modo TEXT", "ALTER TABLE conferencias ADD COLUMN aguarda_em TEXT", "ALTER TABLE eventos ADD COLUMN trace TEXT", "ALTER TABLE inventarios ADD COLUMN uid TEXT", "ALTER TABLE movs ADD COLUMN obs TEXT", "ALTER TABLE movs ADD COLUMN obs_fim TEXT", "ALTER TABLE conferencias ADD COLUMN obs TEXT", "ALTER TABLE conferencias ADD COLUMN obs_fim TEXT", "ALTER TABLE xmls ADD COLUMN obs TEXT", "ALTER TABLE inventarios ADD COLUMN obs_lanc TEXT", "ALTER TABLE movs ADD COLUMN codemp INTEGER", "ALTER TABLE producoes ADD COLUMN codemp INTEGER", "ALTER TABLE codigos ADD COLUMN fator REAL DEFAULT 1", "ALTER TABLE conferencias ADD COLUMN pedidos TEXT", "ALTER TABLE conferencias ADD COLUMN numides TEXT", "ALTER TABLE movs ADD COLUMN extra TEXT", "ALTER TABLE xmls ADD COLUMN status TEXT", "ALTER TABLE xmls ADD COLUMN arquivado TEXT", "ALTER TABLE xmls ADD COLUMN erro TEXT", "ALTER TABLE xmls ADD COLUMN pedido INTEGER", "ALTER TABLE xmls ADD COLUMN importado_em TEXT", "ALTER TABLE inventarios ADD COLUMN escopo TEXT", "ALTER TABLE itens ADD COLUMN marca TEXT", "ALTER TABLE itens ADD COLUMN tipo TEXT", "ALTER TABLE itens ADD COLUMN sit_ant TEXT",
       "ALTER TABLE itens ADD COLUMN decisao TEXT", "ALTER TABLE inventarios ADD COLUMN data_prevista TEXT", "ALTER TABLE inventarios ADD COLUMN antecipar INTEGER DEFAULT 1", "ALTER TABLE inventarios ADD COLUMN responsavel TEXT",
-      "ALTER TABLE inventarios ADD COLUMN obs TEXT", "ALTER TABLE inventarios ADD COLUMN etapa_inicial TEXT", "ALTER TABLE inventarios ADD COLUMN origem_inv INTEGER"];
+      "ALTER TABLE inventarios ADD COLUMN obs TEXT", "ALTER TABLE inventarios ADD COLUMN etapa_inicial TEXT", "ALTER TABLE inventarios ADD COLUMN origem_inv INTEGER",
+      "ALTER TABLE inventarios ADD COLUMN motivo_cancel TEXT", "ALTER TABLE inventarios ADD COLUMN etapa_cancel TEXT", "ALTER TABLE inventarios ADD COLUMN fixa_id INTEGER", "ALTER TABLE producoes ADD COLUMN validade TEXT",
+      "CREATE UNIQUE INDEX IF NOT EXISTS ux_fixa_pendente ON inventarios (fixa_id) WHERE etapa = 'PROGRAMADO' AND fixa_id IS NOT NULL"];
 
 const g = globalThis as unknown as { __invDb?: DatabaseSync; __invSchema?: string };
 export function db(): DatabaseSync {

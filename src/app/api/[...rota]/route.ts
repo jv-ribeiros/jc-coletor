@@ -46,6 +46,7 @@ const rotas: [string, string, Handler][] = [
   ["GET", "erp/saldo-metodo", ({ q }) => erp.metodoSaldo(Number(q.get("codemp")))],
 
   ["GET", "inventarios", () => {
+    I.conferirFixas();
     const invs = db().prepare("SELECT * FROM inventarios ORDER BY id DESC").all() as Row[];
     const st = db().prepare(`SELECT inv_id, COUNT(*) n, COUNT(DISTINCT usuario) ops, MAX(lido_em) ultima FROM leituras WHERE cancelada = 0 GROUP BY inv_id`).all() as Row[];
     const itens = db().prepare(`SELECT inv_id, SUM(saldo <> 0) comsaldo, SUM(saldo * precus) valor FROM itens GROUP BY inv_id`).all() as Row[];
@@ -55,6 +56,9 @@ const rotas: [string, string, Handler][] = [
   }],
   ["POST", "inventarios", ({ body }) => I.abrir(body)],
   ["GET", "inventarios/programados", () => I.programados()],
+  ["GET", "inventarios/fixas", () => I.fixas()],
+  ["POST", "inventarios/fixas/:id", ({ p, body }) => I.editarFixa(Number(p[0]), body)],
+  ["POST", "inventarios/fixas/:id/encerrar", ({ p, body }) => I.encerrarFixa(Number(p[0]), body)],
   ["GET", "inventarios/:id/contar-programado", ({ p }) => I.contarProgramado(Number(p[0]))],
   ["POST", "inventarios/:id/comecar", ({ p, usuario }) => I.comecarNoColetor(Number(p[0]), usuario!.nome)],
   ["POST", "inventarios/avulso", ({ body }) => I.abrirAvulso(body)],
@@ -118,6 +122,7 @@ const rotas: [string, string, Handler][] = [
   ["POST", "inventarios/:id/lancar", ({ p, body }) => I.lancar(Number(p[0]), body)],
   ["POST", "inventarios/:id/parecer", ({ p, body }) => I.salvarParecer(Number(p[0]), body)],
   ["POST", "inventarios/:id/encerrar", ({ p, body }) => I.encerrar(Number(p[0]), body)],
+  ["POST", "inventarios/:id/cancelar", ({ p, body }) => I.cancelar(Number(p[0]), body)],
   ["GET", "inventarios/:id/log", ({ p }) => db().prepare("SELECT * FROM log WHERE inv_id = ? ORDER BY id DESC").all(Number(p[0]))],
   ["POST", "leituras/:uid/cancelar", ({ p, body }) => I.cancelarLeitura(p[0], body)],
 
@@ -213,7 +218,7 @@ const rotas: [string, string, Handler][] = [
   ["GET", "conferencia/minhas", ({ usuario }) => CF.minhas(usuario!)],
   ["POST", "conferencia/:id/falta", ({ p, body, usuario }) => CF.falta(Number(p[0]), body, usuario!)],
   ["POST", "conferencia/:id/voltar", ({ p, usuario }) => CF.voltar(Number(p[0]), usuario!)],
-  ["GET", "sistema/conferencia", () => ({ modo: CF.modoAtual(), bipar: CF.bipar() })],
+  ["GET", "sistema/conferencia", () => CF.opcoes()],
   ["POST", "sistema/conferencia", ({ body, usuario }) => { exigirAdmin(usuario); return CF.salvarModo(body, usuario!); }],
   ["GET", "conferencia/romaneio/:n", ({ p }) => CF.romaneio(Number(p[0]))],
   ["GET", "conferencia/romaneios", () => CF.romaneios()],
@@ -237,6 +242,8 @@ const rotas: [string, string, Handler][] = [
   ["GET", "producao/minhas", ({ usuario }) => P.minhas(usuario!)],
   ["POST", "producao", ({ body, usuario }) => P.apontar(body, usuario!)],
   ["POST", "producao/reprocessar", ({ usuario }) => P.reprocessar(usuario!)],
+  ["GET", "producao/:id/paletes", ({ p }) => P.paletes(Number(p[0]))],
+  ["POST", "producao/:id/paletes", ({ p, body, usuario }) => P.imprimirPaletes(Number(p[0]), body, usuario!)],
   ["GET", "producao/:id", ({ p }) => ({ ...P.obter(Number(p[0])), historico: P.historico(Number(p[0])) })],
   ["POST", "producao/:id/lancar", ({ p, usuario }) => P.lancar(Number(p[0]), usuario!)],
   ["POST", "producao/:id/cancelar", ({ p, body, usuario }) => P.cancelar(Number(p[0]), body, usuario!)],

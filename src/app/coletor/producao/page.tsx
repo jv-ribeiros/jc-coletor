@@ -4,11 +4,12 @@
 // Cada apontamento tem um uid gerado no aparelho: se a rede cair e o operador repetir, não duplica.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CircleAlert, History, LoaderCircle, RefreshCw, ScanBarcode, Search, X } from "lucide-react";
+import { ArrowLeft, Check, CircleAlert, History, LoaderCircle, Printer, RefreshCw, ScanBarcode, Search, X } from "lucide-react";
 import { cx } from "@/components/ui";
 import { Observacao } from "@/components/observacao";
 import { SelectLote } from "@/components/producao";
 import { api, chave, fatorLido, fdata, fq, nomeFator, r4, sessao, type Row } from "@/lib/client";
+import { resumo } from "@/lib/paletes";
 
 const hoje = () => new Date().toLocaleDateString("sv-SE");
 const novoUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -30,7 +31,12 @@ export default function ColetorProducao() {
   const [qtd, setQtd] = useState(""), [obs, setObs] = useState(""), [lote, setLote] = useState(""), [data, setData] = useState(hoje());
   const [sim, setSim] = useState<Row | null>(null), [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<Row | null>(null), [aviso, setAviso] = useState("");
-  const [minhas, setMinhas] = useState<Row[] | null>(null);
+  const [minhas, setMinhas] = useState<Row[] | null>(null), [conta, setConta] = useState("");
+  // "Folhas dos paletes · 3 + sobra": a conta sai da montagem do cadastro
+  useEffect(() => {
+    setConta(""); if (!resultado) return;
+    api(`cadastro/${encodeURIComponent(resultado.codpro)}/palete`).then((m) => { if (m.camadas) setConta(resumo(Number(resultado.qtd), m.camadas * m.caixas)); }).catch(() => {});
+  }, [resultado]);
   const uid = useRef(novoUid()), refBusca = useRef<HTMLInputElement>(null), refQtd = useRef<HTMLInputElement>(null);
 
   const carregarCat = useCallback(() => { setErroCat(""); api<Row[]>("producao/catalogo").then(setCat).catch((e) => setErroCat(e.message)); }, []);
@@ -95,6 +101,8 @@ export default function ColetorProducao() {
               </div>
               <div className="mt-1 text-[14px] opacity-90">{fq(resultado.qtd)} {resultado.unipro} · {resultado.nompro}</div>
               {resultado.status !== "LANCADA" && <div className="mt-2 text-[13px]">{resultado.erro || "Ficou pendente."} A gestão reenvia depois; não aponte de novo.</div>}
+              {/* o palete sobe para o aéreo com a folha: quem aponta é quem imprime */}
+              <Link href={`/coletor/producao/${resultado.id}/paletes`} className="mt-3 flex min-h-[64px] items-center justify-center gap-2 rounded-[20px] bg-white px-4 text-[17px] font-semibold text-ink"><Printer className="size-5" />Folhas dos paletes{conta ? ` · ${conta}` : ""}</Link>
             </div>
           )}
           {aviso && <div className="anim-entra mb-4 flex items-start gap-2 rounded-xl bg-rose-100 px-4 py-3 text-[14px] text-rose-800"><CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{aviso}</span><button onClick={() => setAviso("")}><X className="size-4" /></button></div>}
@@ -135,6 +143,7 @@ export default function ColetorProducao() {
                   <span className={cx("shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold", COR[p.status])}>{NOME[p.status]}</span></div>
                 <div className="text-[13px] text-muted">{fq(p.qtd)} {p.unipro}{p.lote ? ` · lote ${p.lote}` : ""} · {fdata(p.criado_em).slice(11)}{p.numide ? ` · Lieto nº ${p.numide}` : ""}</div>
                 {p.erro && <div className="mt-1 text-[12px] text-rose-700">{p.erro}</div>}
+                {p.status !== "CANCELADA" && <Link href={`/coletor/producao/${p.id}/paletes`} className="mt-2 flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-[var(--sv)] text-[15px] font-semibold"><Printer className="size-4" />Folhas dos paletes</Link>}
               </div>
             ))}
           </div>

@@ -180,15 +180,31 @@ const addMeses = (iso: string, n: number) => {
 const fdataBr = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 const DATA_OK = /^\d{4}-\d{2}-\d{2}$/;
 
+// Regras de repetição. "util" = segunda a sexta (feriado não sai: o Lieto não tem cadastro; exclui-se o do dia).
+const REGRAS: Record<string, string> = { util: "Todo dia útil", "1": "Todo dia", "7": "Toda semana", "14": "A cada 15 dias", mensal: "Todo mês", trimestral: "A cada 3 meses" };
+const diaUtil = (iso: string) => { const [a, m, d] = iso.split("-").map(Number), w = new Date(a, m - 1, d).getDay(); return w > 0 && w < 6; };
+const utilDesde = (iso: string) => { let d = iso; while (!diaUtil(d)) d = addDias(d, 1); return d; };
+// k-ésima data da regra a partir do início
+const nEsima = (regra: string, inicio: string, k: number) => regra === "mensal" ? addMeses(inicio, k) : regra === "trimestral" ? addMeses(inicio, 3 * k) : addDias(inicio, k * Number(regra));
+// primeira data da regra depois de "apos" (exclusivo), nunca antes do início
+function dataApos(regra: string, inicio: string, apos: string) {
+  if (regra === "util") return utilDesde(addDias(apos < inicio ? addDias(inicio, -1) : apos, 1));
+  for (let k = 0; k < 5000; k++) { const d = nEsima(regra, inicio, k); if (d > apos) return d; }
+  throw new Erro("Regra de repetição inválida.");
+}
+const datasRegra = (regra: string, inicio: string, n: number) => { const out: string[] = []; let d = regra === "util" ? utilDesde(inicio) : inicio; while (out.length < n) { out.push(d); d = dataApos(regra, inicio, d); } return out; };
+
 function programar(body: Row, b: { descricao: string; escopo: Escopo | null; etapa: string; usuario: string }) {
   if (body.origem === "csv") throw new Erro("A programação usa o saldo do ERP (o CSV só pode ser lido na hora de abrir).");
   const codemp = Number(body.codemp);
   if (!codemp) throw new Erro("Escolha a empresa.");
   const data = String(body.dataPrevista || "");
   if (!DATA_OK.test(data)) throw new Erro("Informe a data prevista.");
-  const vezes = Math.min(Math.max(Number(body.vezes) || 1, 1), 24), passo = String(body.repetir || "");
-  const datas = Array.from({ length: vezes }, (_, k) =>
-    passo === "mensal" ? addMeses(data, k) : passo === "trimestral" ? addMeses(data, 3 * k) : passo ? addDias(data, k * Number(passo)) : data);
+  const passo = String(body.repetir || "");
+  if (passo && !REGRAS[passo]) throw new Erro("Repetição inválida.");
+  if (body.fixa) return criarFixa(body, b, passo, data, codemp);
+  const vezes = passo ? Math.min(Math.max(Number(body.vezes) || 1, 1), 60) : 1;
+  const datas = passo ? datasRegra(passo, data, vezes) : [data];
   const cfg = getConfig();
   return tx(() => {
     const ids = datas.map((d) => {
@@ -221,12 +237,97 @@ export function editarProgramacao(id: number, body: Row) {
 export function excluirProgramacao(id: number) {
   const inv = getInv(id);
   if (inv.etapa !== "PROGRAMADO") throw new Erro("Só inventários programados (ainda não iniciados) podem ser excluídos.");
-  tx(() => { db().prepare("DELETE FROM inventarios WHERE id = ?").run(id); db().prepare("DELETE FROM log WHERE inv_id = ?").run(id); });
+  tx(() => {
+    db().prepare("DELETE FROM inventarios WHERE id = ?").run(id); db().prepare("DELETE FROM log WHERE inv_id = ?").run(id);
+    // ocorrência de programação fixa: pular o dia. Entra a seguinte (a partir de hoje, sem acumular vencidas).
+    if (inv.fixa_id) proximaDaFixa(inv.fixa_id, maior(inv.data_prevista, addDias(hoje(), -1)));
+  });
+}
+
+// ---------- programação fixa ----------
+// Fica sempre UMA ocorrência na agenda (um programado comum, com fixa_id). Quando ela começa ou é excluída, entra a seguinte.
+// Dia pulado fica como vencido, sem acumular outros. A lista de itens é a da criação.
+const hoje = () => agora().slice(0, 10);
+const maior = (a: string, b: string) => (a > b ? a : b);
+const lerFixa = (id: number) => { const f = db().prepare("SELECT * FROM inv_fixas WHERE id = ?").get(id) as Row | undefined; if (!f) throw new Erro("Programação fixa não encontrada.", 404); return f; };
+const pendenteDa = (fixa: number) => db().prepare("SELECT * FROM inventarios WHERE fixa_id = ? AND etapa = 'PROGRAMADO'").get(fixa) as Row | undefined;
+const nomeOcorrencia = (nomeFixa: string, d: string) => `${nomeFixa} — ${fdataBr(d)}`;
+// cria a próxima ocorrência (depois de "apos") se a fixa está ativa e não tem nenhuma pendente. Chamar dentro de tx.
+function proximaDaFixa(fixa: number, apos: string) {
+  const f = lerFixa(fixa);
+  if (!f.ativa || pendenteDa(fixa)) return null;
+  const d = dataApos(f.regra, f.inicio, maior(apos, f.ultima || "")), cfg = getConfig();
+  const id = Number(db().prepare(`INSERT INTO inventarios (descricao, etapa, origem, codemp, nomemp, criado_por, tol_qtd, tol_pct, escopo, etapa_inicial, data_prevista, responsavel, obs, antecipar, fixa_id)
+    VALUES (?, 'PROGRAMADO', 'ERP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nomeOcorrencia(f.nome, d), f.codemp, f.nomemp, f.criada_por, cfg.regras.toleranciaQtd || 0, cfg.regras.toleranciaPct || 0,
+    f.escopo, f.etapa, d, f.responsavel, f.obs, f.antecipar, fixa).lastInsertRowid);
+  db().prepare("UPDATE inv_fixas SET ultima = ? WHERE id = ?").run(d, fixa);
+  log(id, f.criada_por, "PROGRAMOU INVENTÁRIO", { dataPrevista: d, fixa: `${f.nome} (${REGRAS[f.regra]})` });
+  return id;
+}
+function criarFixa(body: Row, b: { descricao: string; escopo: Escopo | null; etapa: string; usuario: string }, regra: string, data: string, codemp: number) {
+  if (!regra) throw new Erro("Escolha como repetir a programação fixa.");
+  const inicio = regra === "util" ? utilDesde(data) : data;
+  return tx(() => {
+    const fixa = Number(db().prepare(`INSERT INTO inv_fixas (nome, regra, inicio, codemp, nomemp, escopo, etapa, responsavel, antecipar, obs, ativa, criada_por, criada_em) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)`)
+      .run(b.descricao, regra, inicio, codemp, String(body.nomemp || ""), b.escopo ? JSON.stringify(b.escopo) : null, b.etapa, String(body.responsavel || "").trim().toUpperCase() || null,
+        body.antecipar === false ? 0 : 1, String(body.obs || "").trim() || null, b.usuario, agora()).lastInsertRowid);
+    const id = proximaDaFixa(fixa, addDias(inicio, -1))!;
+    return { id, ids: [id], fixa, programado: true };
+  });
+}
+// Confere as fixas ativas: se alguma ficou sem ocorrência (ex.: apagada por fora), cria a próxima a partir de hoje.
+export function conferirFixas() {
+  const sem = db().prepare("SELECT f.id FROM inv_fixas f WHERE f.ativa = 1 AND NOT EXISTS (SELECT 1 FROM inventarios i WHERE i.fixa_id = f.id AND i.etapa = 'PROGRAMADO')").all() as Row[];
+  if (sem.length) tx(() => { for (const f of sem) proximaDaFixa(f.id, addDias(hoje(), -1)); });
+}
+export function fixas() {
+  conferirFixas();
+  return (db().prepare("SELECT * FROM inv_fixas WHERE ativa = 1 ORDER BY nome").all() as Row[]).map((f) => {
+    const p = pendenteDa(f.id), feitos = (db().prepare("SELECT COUNT(*) n FROM inventarios WHERE fixa_id = ? AND etapa <> 'PROGRAMADO'").get(f.id) as Row).n;
+    // próximas datas previstas (calculadas, nada é criado): para o calendário
+    const previstas: string[] = []; let d = p?.data_prevista || f.ultima || f.inicio;
+    while (previstas.length < 45) { d = dataApos(f.regra, f.inicio, d); if (d > addDias(hoje(), 62)) break; previstas.push(d); }
+    return { id: f.id, nome: f.nome, regra: f.regra, regraNome: REGRAS[f.regra], inicio: f.inicio, codemp: f.codemp, nomemp: f.nomemp, itens: descreverEscopo(f.escopo ? JSON.parse(f.escopo) : null),
+      etapa: f.etapa, responsavel: f.responsavel, antecipar: f.antecipar, obs: f.obs, criada_por: f.criada_por, feitos,
+      proximo: p ? { id: p.id, data: p.data_prevista } : null, previstas };
+  });
+}
+// Editar vale para as próximas e para a que está na agenda (ainda não começou). A lista não muda.
+export function editarFixa(id: number, body: Row) {
+  const f = lerFixa(id), usuario = nome(body.usuario);
+  if (!f.ativa) throw new Erro("Esta programação fixa já foi encerrada.");
+  const nomeNovo = String(body.nome ?? f.nome).trim().slice(0, 140), regra = String(body.regra ?? f.regra);
+  if (!nomeNovo) throw new Erro("Informe o nome.");
+  if (!REGRAS[regra]) throw new Erro("Repetição inválida.");
+  const etapa = ETAPAS_INICIO.includes(body.etapa) ? body.etapa : f.etapa, antecipar = body.antecipar === undefined ? f.antecipar : body.antecipar ? 1 : 0;
+  const resp = String(body.responsavel ?? f.responsavel ?? "").trim().toUpperCase() || null, obs = String(body.obs ?? f.obs ?? "").trim() || null;
+  tx(() => {
+    const p = pendenteDa(id);
+    // mudou a regra: as próximas contam a partir da que está na agenda
+    const inicio = regra !== f.regra ? (p?.data_prevista || f.ultima || hoje()) : f.inicio;
+    db().prepare("UPDATE inv_fixas SET nome = ?, regra = ?, inicio = ?, etapa = ?, antecipar = ?, responsavel = ?, obs = ? WHERE id = ?").run(nomeNovo, regra, inicio, etapa, antecipar, resp, obs, id);
+    if (p) {
+      db().prepare("UPDATE inventarios SET descricao = ?, etapa_inicial = ?, antecipar = ?, responsavel = ?, obs = ? WHERE id = ?").run(nomeOcorrencia(nomeNovo, p.data_prevista), etapa, antecipar, resp, obs, p.id);
+      log(p.id, usuario, "EDITOU PROGRAMAÇÃO FIXA", { nome: nomeNovo, regra: REGRAS[regra], responsavel: resp, etapaInicial: etapa, podeAntecipar: !!antecipar });
+    }
+  });
+  return fixas().find((x) => x.id === id);
+}
+export function encerrarFixa(id: number, body: Row) {
+  const f = lerFixa(id), usuario = nome(body.usuario);
+  if (!f.ativa) throw new Erro("Esta programação fixa já foi encerrada.");
+  tx(() => {
+    db().prepare("UPDATE inv_fixas SET ativa = 0, encerrada_por = ?, encerrada_em = ? WHERE id = ?").run(usuario, agora(), id);
+    const p = pendenteDa(id);
+    if (p && body.excluirProximo) { db().prepare("DELETE FROM inventarios WHERE id = ?").run(p.id); db().prepare("DELETE FROM log WHERE inv_id = ?").run(p.id); }
+    else if (p) log(p.id, usuario, "ENCERROU A PROGRAMAÇÃO FIXA", "Esta ocorrência continua na agenda.");
+  });
+  return { ok: true };
 }
 
 // Inicia um programado: lê o ERP agora, congela o saldo e libera os coletores.
 // ---------- programados no coletor ----------
-export const programados = () => (db().prepare("SELECT id, descricao, nomemp, data_prevista, responsavel, obs, escopo, etapa_inicial, COALESCE(antecipar, 1) antecipar FROM inventarios WHERE etapa = 'PROGRAMADO' ORDER BY data_prevista, id").all() as Row[])
+export const programados = () => (conferirFixas(), db().prepare("SELECT id, descricao, nomemp, data_prevista, responsavel, obs, escopo, etapa_inicial, COALESCE(antecipar, 1) antecipar, fixa_id FROM inventarios WHERE etapa = 'PROGRAMADO' ORDER BY data_prevista, id").all() as Row[])
   .map(({ escopo, ...i }) => ({ ...i, itens: descreverEscopo(escopo ? JSON.parse(escopo) : null), hoje: agora().slice(0, 10) }));
 // Quantos produtos entram (lê o Lieto, sem gravar nada)
 export async function contarProgramado(id: number) {
@@ -263,6 +364,8 @@ export async function iniciar(id: number, body: Row) {
   tx(() => {
     if ((getInv(id) as Row).etapa !== "PROGRAMADO") throw new Erro("Este inventário já foi iniciado.");
     gravarInventario({ descricao: inv.descricao, origem, codemp, nomemp: inv.nomemp, dataSaldo, usuario, escopo, etapa }, produtos, id);
+    // ocorrência de programação fixa: entra a seguinte (depois desta e de hoje)
+    if (inv.fixa_id) proximaDaFixa(inv.fixa_id, maior(inv.data_prevista, hoje()));
   });
   return { id, etapa };
 }
@@ -315,6 +418,7 @@ export function registrarLeituras(id: number, body: Row) {
 
 function registrar(inv: Row, l: Row, usuario: string, dispositivo: string) {
   const cfg = getConfig(), etapa = NUM_ETAPA[inv.etapa];
+  if (inv.etapa === "CANCELADO") throw new Erro("Este inventário foi cancelado pela gestão. A leitura não foi registrada.");
   if (!etapa) throw new Erro(`Inventário em ${inv.etapa}: não aceita mais leituras.`);
   if (Number(l.etapa) !== etapa) throw new Erro(`Leitura da etapa ${l.etapa}, mas o inventário está em ${inv.etapa}.`);
   if (!usuario) throw new Erro("Operador não informado.");
@@ -394,6 +498,7 @@ export function fechamento(id: number) {
 export async function avancar(id: number, body: Row) {
   // quem finaliza informa a etapa que está vendo: dois toques ao mesmo tempo não fecham duas etapas
   const vendo = getInv(id).etapa;
+  if (vendo === "CANCELADO") throw new Erro("Este inventário foi cancelado pela gestão.", 409);
   if (body.etapa && body.etapa !== vendo) throw new Erro(`Esta etapa já foi finalizada: o inventário está em ${vendo}.`, 409);
   const inv = getInv(id), usuario = nome(body.usuario), itens = itensView(id).filter((i) => i.situacao !== DESC);
   const upd = db().prepare("UPDATE itens SET c1 = COALESCE(?, c1), c2 = COALESCE(?, c2), final = ?, situacao = ? WHERE inv_id = ? AND codpro = ?");
@@ -438,6 +543,7 @@ export async function avancar(id: number, body: Row) {
     const feitos = itens.filter((i) => i.situacao === "AUDITADO");
     const reenviar = feitos.filter((i) => i.decisao === "RECONTAR").map((i) => i.codpro);
     const novo = reenviar.length ? await abrirRecontagem(inv, reenviar, usuario) : null;
+    if (getInv(id).etapa !== "AUDITORIA") throw new Erro("O inventário foi cancelado enquanto a auditoria fechava.", 409);
     setEtapa("LANCAMENTO");
     log(id, usuario, "FECHOU AUDITORIA", { acertar: feitos.filter((i) => !SEM_AJUSTE(i)).length, mantidos: feitos.filter((i) => i.decisao === "MANTER").length,
       reenviados: reenviar.length, ...(novo ? { novoInventario: novo } : {}) });
@@ -529,7 +635,14 @@ export async function ajustes(id: number) {
   return { aviso, ajustes: lista, podeGravarErp: !!inv.codemp };
 }
 
+// enquanto grava na MESTOQUE, ninguém cancela
+const lancando = new Set<number>();
 export async function lancar(id: number, body: Row) {
+  if (lancando.has(id)) throw new Erro("Os ajustes já estão sendo gravados.", 409);
+  lancando.add(id);
+  try { return await lancarAgora(id, body); } finally { lancando.delete(id); }
+}
+async function lancarAgora(id: number, body: Row) {
   const inv = getInv(id), usuario = nome(body.usuario);
   if (inv.etapa !== "LANCAMENTO") throw new Erro("O inventário não está na etapa de lançamento.");
   if (inv.lancado_em) throw new Erro(`Ajustes já registrados em ${inv.lancado_em} por ${inv.lancado_por}.`);
@@ -554,7 +667,7 @@ export async function lancar(id: number, body: Row) {
 
 export function salvarParecer(id: number, body: Row) {
   const inv = getInv(id), usuario = nome(body.usuario);
-  if (inv.etapa === "ENCERRADO") throw new Erro("Inventário encerrado.");
+  if (inv.etapa === "ENCERRADO" || inv.etapa === "CANCELADO") throw new Erro(`Inventário ${inv.etapa === "CANCELADO" ? "cancelado" : "encerrado"}.`);
   db().prepare("UPDATE inventarios SET parecer = ?, parecer_por = ?, parecer_em = ? WHERE id = ?").run(String(body.texto || ""), usuario, agora(), id);
   log(id, usuario, "SALVOU PARECER");
 }
@@ -566,4 +679,21 @@ export function encerrar(id: number, body: Row) {
   if (!String(inv.parecer || "").trim()) throw new Erro("Escreva e salve o parecer antes de encerrar.");
   db().prepare("UPDATE inventarios SET etapa = 'ENCERRADO', encerrado_em = ?, encerrado_por = ? WHERE id = ?").run(agora(), usuario, id);
   log(id, usuario, "ENCERROU INVENTÁRIO");
+}
+
+// Cancelar: da contagem ao lançamento, enquanto os ajustes não foram registrados (depois disso o estoque já mudou: estorna no Lieto).
+// Nada vai para o Lieto; leituras e itens ficam para consulta. Não reabre. Programado não cancela: exclui.
+const CANCELA = ["CONTAGEM", "RECONTAGEM", "AUDITORIA", "LANCAMENTO"];
+export function cancelar(id: number, body: Row) {
+  const inv = getInv(id), usuario = nome(body.usuario), motivo = String(body.motivo || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (inv.etapa === "PROGRAMADO") throw new Erro("Inventário programado não é cancelado: use Excluir.");
+  if (!CANCELA.includes(inv.etapa)) throw new Erro(inv.etapa === "CANCELADO" ? "Este inventário já foi cancelado." : "Inventário encerrado não pode ser cancelado.");
+  if (inv.lancado_em || lancando.has(id)) throw new Erro(`Não dá para cancelar: os ajustes já foram ${inv.lancado_modo === "MANUAL" ? "lançados no ERP" : "gravados na MESTOQUE"}${inv.lancado_em ? ` em ${inv.lancado_em.slice(8, 10)}/${inv.lancado_em.slice(5, 7)}/${inv.lancado_em.slice(0, 4)}` : ""}. Para desfazer, estorne no Lieto.`);
+  if (motivo.length < 5) throw new Erro("Escreva o motivo do cancelamento.");
+  if (String(body.confirmacao || "").trim().toUpperCase() !== "CANCELAR") throw new Erro("Digite CANCELAR para confirmar.");
+  const r = db().prepare("UPDATE inventarios SET etapa = 'CANCELADO', etapa_cancel = ?, motivo_cancel = ?, encerrado_em = ?, encerrado_por = ? WHERE id = ? AND etapa = ? AND lancado_em IS NULL")
+    .run(inv.etapa, motivo, agora(), usuario, id, inv.etapa);
+  if (!r.changes) throw new Erro("O inventário mudou enquanto você cancelava. Recarregue a página.", 409);
+  log(id, usuario, "CANCELOU INVENTÁRIO", { etapa: inv.etapa, motivo });
+  return getInv(id);
 }

@@ -114,12 +114,12 @@ body.coletor button, body.coletor a, body.coletor label { touch-action: manipula
 .abas2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 5px; border-radius: 22px; background: var(--sv); }
 .abas2 button { min-height: 62px; border-radius: 18px; font-size: 17px; font-weight: 650; color: var(--color-muted); } .abas2 .sel { background: #fff; color: var(--color-ink); box-shadow: 0 1px 4px #1a1f2618; }
 .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; } .chips button { min-height: 56px; border-radius: 18px; background: #fff; padding: 0 16px; font-size: 15.5px; font-weight: 600; white-space: nowrap; } .chips .sel { background: var(--color-brand-800); color: #fff; }
-.pd { width: 100%; display: block; border-radius: 24px; background: #fff; padding: 14px 16px; text-align: left; } .pd:disabled { opacity: .55; }
+.pd { width: 100%; display: block; border-radius: 24px; background: #fff; padding: 14px 16px; text-align: left; } .pd:disabled, .pd.ap { opacity: .55; }
 .pd .l1 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; } .pd .l1 b { font-size: 22px; letter-spacing: -.02em; }
 .ent { margin-left: auto; font-size: 14.5px; font-weight: 650; } .ent.atr { color: #a51d39; } .ent.hj { color: var(--ok); } .kv .ent { margin-left: 0; }
 .pd .cl { font-size: 16.5px; font-weight: 600; margin-top: 2px; line-height: 1.25; } .pd .in, .rc small { font-size: 14.5px; color: var(--color-muted); margin-top: 3px; display: block; }
 .pd .ft { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.tag { font-size: 13.5px; font-weight: 700; border-radius: 10px; padding: 5px 10px; background: var(--sv); } .tag.pcp { background: #e9eafb; color: #3b3f9e; } .tag.sep { background: #fdf1d8; color: #7a5200; } .tag.ok { background: #e2f3ea; color: var(--ok); } .tag.er { background: #fdeaee; color: #a51d39; }
+.tag { font-size: 13.5px; font-weight: 700; border-radius: 10px; padding: 5px 10px; background: var(--sv); } .tag.pcp { background: #e9eafb; color: #3b3f9e; } .tag.sep { background: #fdf1d8; color: #7a5200; } .tag.ok { background: #e2f3ea; color: var(--ok); } .tag.er { background: #fdeaee; color: #a51d39; } .tag.am { background: #f8efdc; color: #8a5a00; }
 .rc { border-radius: 24px; background: var(--color-brand-800); color: #fff; padding: 16px 18px; } .rc b { font-size: 23px; display: block; } .rc small { color: #fff; opacity: .85; } .rc .barra { background: #ffffff33; } .rc .barra i { background: #fff; }
 .cx { background: #fff; border-radius: 24px; padding: 16px 18px; font-size: 16px; } .cx h3 { font-size: 13.5px; color: var(--color-muted); font-weight: 650; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin-top: 8px; } .kv span { color: var(--color-muted); }
@@ -176,4 +176,35 @@ body.coletor .inv div:has(> input[placeholder^="Procurar"]) > svg { top: 22px; }
   body.coletor .inv main { padding-top: 4px !important; } body.coletor .inv main section > div:first-child { padding-top: 4px; padding-bottom: 4px; }
   body.coletor .inv main section > div:nth-child(2) { padding: 8px; } body.coletor .inv .visorinv { padding-top: 0; padding-bottom: 0; }
   body.coletor .inv header { padding-top: 4px; padding-bottom: 4px; } body.coletor .inv nav button { height: 64px; } body.coletor .inv .teclado ~ button { height: 60px; min-height: 60px; margin-top: 6px; }
+}
+
+/* ---------- folha de identificação do palete: meia A4 deitada (210 × 148,5 mm). Desenho: design/pages/folha-palete_v4.html (opção A) ----------
+   Uma grade só (moldura e divisões na mesma linha, cantos retos), fonte condensada, tudo centralizado na célula.
+   Os tamanhos de letra saem da medida na tela (useTamanhos); os daqui valem até a medida chegar. */
+.fpal .fo { width: 210mm; height: 148.5mm; box-sizing: border-box; padding: 7mm; background: #fff; color: #000; font-family: var(--font-palete), "Arial Narrow", sans-serif; overflow: hidden; }
+.fpal .fo .g { height: 100%; box-sizing: border-box; border: .7mm solid #000; display: grid; grid-template-rows: minmax(0, 1fr) 42mm; }
+.fpal .fo .lb { display: block; text-align: center; font-size: 10pt; font-weight: 400; letter-spacing: .09em; text-transform: uppercase; line-height: 1; }
+.fpal .fo .pr { display: flex; flex-direction: column; min-height: 0; padding: 4mm 5mm; border-bottom: .7mm solid #000; }
+.fpal .fo .nm { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; text-align: center; margin-top: 1mm; font-size: 40pt; font-weight: 700; line-height: 1.04; text-transform: uppercase; overflow: hidden; }
+.fpal .fo .bx { display: grid; grid-template-columns: 62fr 38fr; min-height: 0; }
+.fpal .fo .va, .fpal .fo .qt { display: flex; flex-direction: column; min-width: 0; padding: 4mm 5mm; }
+.fpal .fo .qt { border-left: .7mm solid #000; }
+/* data e quantidade: centralizadas; número e unidade na mesma linha de base (o span) */
+.fpal .fo .valor { flex: 1; display: flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 50pt; font-weight: 700; line-height: .8; letter-spacing: -.005em; font-variant-numeric: tabular-nums; overflow: hidden; }
+.fpal .fo .valor small { font-size: .42em; font-weight: 400; margin-left: .22em; letter-spacing: .04em; line-height: 1; }
+/* a impressora é preto e branco: a célula preta é o destaque; print-color-adjust faz sair mesmo com "gráficos de fundo" desligado */
+.fpal .fo .va { background: #000; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+/* produto sem validade: a quantidade fica com o andar de baixo inteiro */
+.fpal .fo.sv .bx { grid-template-columns: 1fr; }
+.fpal .fo.sv .qt { border-left: 0; }
+/* medida das letras: folhas em tamanho real fora da tela (precisam de layout para medir) */
+.fpal-medida { position: absolute; left: -10000px; top: 0; visibility: hidden; pointer-events: none; }
+.fpal-papel { display: none; }
+@media print {
+  .fpal-medida { display: none; }
+  .fpal-papel { display: block; }
+  .fpal-papel .a4 { width: 210mm; height: 296.5mm; overflow: hidden; break-after: page; }
+  .fpal-papel .a4:last-child { break-after: auto; }
+  .fpal-papel .a4 > div + div > .fo { border-top: 1px dashed #888; }
+  body.coletor { background: #fff; }
 }

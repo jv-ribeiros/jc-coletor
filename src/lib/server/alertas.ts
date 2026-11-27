@@ -51,7 +51,7 @@ export async function listar(u: Usuario) {
     for (const i of todos("SELECT id, descricao, data_prevista FROM inventarios WHERE etapa = 'PROGRAMADO' AND data_prevista < ?", agora().slice(0, 10)))
       add("P", "Inventário programado atrasado", `#${i.id} ${i.descricao}`, i.data_prevista, "/inventario/programacao", ["inventario_gestao"]);
     for (const i of todos(`SELECT * FROM (SELECT i.id, i.descricao, i.etapa, MAX(COALESCE(i.snapshot_em, ''), COALESCE((SELECT MAX(recebido_em) FROM leituras l WHERE l.inv_id = i.id), ''), COALESCE((SELECT MAX(em) FROM log g WHERE g.inv_id = i.id), '')) ult
-      FROM inventarios i WHERE i.etapa NOT IN ('PROGRAMADO','ENCERRADO')) WHERE ult < ?`, ha(72 * H))) add("P", "Inventário parado há mais de 3 dias", `#${i.id} ${i.descricao} · ${i.etapa}`, i.ult, `/inventario/${i.id}`, ["inventario_gestao"]);
+      FROM inventarios i WHERE i.etapa NOT IN ('PROGRAMADO','ENCERRADO','CANCELADO')) WHERE ult < ?`, ha(72 * H))) add("P", "Inventário parado há mais de 3 dias", `#${i.id} ${i.descricao} · ${i.etapa}`, i.ult, `/inventario/${i.id}`, ["inventario_gestao"]);
   });
   await parte("empresas", async () => { for (const r of (await empresas()).rotinas) if (!r.codemp) add("P", `Rotina sem empresa: ${r.nome}`, "Não grava até escolher em Sistema.", "", "/sistema", ["gestao"]); });
   await parte("auditoria", () => {

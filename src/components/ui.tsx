@@ -46,7 +46,7 @@ const SIT: Record<string, string> = {
   AUDITAR: "bg-rose-50 text-rose-700 ring-rose-200", AUDITADO: "bg-sky-50 text-sky-800 ring-sky-200",
   CONTAGEM: "bg-sky-50 text-sky-800 ring-sky-200", RECONTAGEM: "bg-amber-50 text-amber-800 ring-amber-200",
   AUDITORIA: "bg-rose-50 text-rose-700 ring-rose-200", LANCAMENTO: "bg-violet-50 text-violet-800 ring-violet-200",
-  ENCERRADO: "bg-slate-100 text-slate-700 ring-slate-200",
+  ENCERRADO: "bg-slate-100 text-slate-700 ring-slate-200", CANCELADO: "bg-slate-200 text-slate-700 ring-slate-300",
   DESCONSIDERADO: "bg-slate-100 text-slate-500 ring-slate-200",
   PROGRAMADO: "bg-indigo-50 text-indigo-800 ring-indigo-200",
   PENDENTE: "bg-amber-50 text-amber-800 ring-amber-200", LANCADA: "bg-brand-50 text-brand-700 ring-brand-200",

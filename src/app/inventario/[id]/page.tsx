@@ -3,14 +3,14 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, Boxes, Check, ChevronRight, CircleAlert, ClipboardCheck, Download, FileText, History, ListChecks, MapPin,
+  ArrowRight, Ban, Boxes, Check, ChevronRight, CircleAlert, ClipboardCheck, Download, FileText, History, ListChecks, MapPin,
   Printer, ScanBarcode, Search, Send, ShieldCheck, TrendingDown, TrendingUp, TriangleAlert, Undo2, Users,
 } from "lucide-react";
 import { Observacao } from "@/components/observacao";
 import { Topo, useResponsavel } from "@/components/topo";
 import { DESC, PlanilhaAuditoria, semLeitura, useDesconsiderar } from "@/components/planilha-auditoria";
 import { descreverEscopo } from "@/lib/escopo";
-import { Badge, Button, Card, Carregando, Gaveta, Stat, Stepper, Vazio, cx, inputCls, useConfirm, usePaginacao, useToast } from "@/components/ui";
+import { Badge, Button, Card, Carregando, Gaveta, Modal, Stat, Stepper, Vazio, cx, inputCls, useConfirm, usePaginacao, useToast } from "@/components/ui";
 import { ApiErro, NOME_DECISAO, NOME_ETAPA, NUM_ETAPA, api, baixarCsv, fdata, fpct, fq, frs, frsK, indicadores, type Row } from "@/lib/client";
 
 type Dados = { inv: Row; regras: Row; itens: Row[]; operadores: Row[]; lancamentos: Row[]; totalItens: number };
@@ -61,14 +61,26 @@ export default function Painel() {
               <ListChecks className="size-3.5 shrink-0" /><span className="truncate">{descreverEscopo(inv.escopo ? JSON.parse(inv.escopo) : null)} · {d.totalItens.toLocaleString("pt-BR")} itens na lista · {t.comSaldo.toLocaleString("pt-BR")} com saldo</span>
             </p>
           </div>
-          <div className="flex gap-2">
-            <Exportar d={d} />
-            <Link href={`/inventario/${inv.id}/relatorio`} target="_blank"><Button variant="secondary"><Printer className="size-4" />Relatório</Button></Link>
+          <div className="flex flex-col items-end gap-1.5">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Exportar d={d} />
+              <Link href={`/inventario/${inv.id}/relatorio`} target="_blank"><Button variant="secondary"><Printer className="size-4" />Relatório</Button></Link>
+              <CancelarInventario d={d} recarregar={carregar} />
+            </div>
+            {inv.etapa === "LANCAMENTO" && inv.lancado_em && <p className="max-w-md text-right text-[12px] text-rose-700">Não dá para cancelar: os ajustes já foram {inv.lancado_modo === "ERP" ? "gravados na MESTOQUE" : "lançados no ERP"} em {fdata(inv.lancado_em)}. Para desfazer, estorne no Lieto.</p>}
           </div>
         </div>
 
-        <Stepper etapa={inv.etapa} inicio={inv.etapa_inicial} />
-        <ProximoPasso d={d} t={t} recarregar={carregar} irPara={setAba} />
+        {/* Cancelado: sai a linha de etapas e entra a faixa com quem, quando e por quê. O resto fica para consulta. */}
+        {inv.etapa === "CANCELADO" ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-100 p-5 text-sm">
+            <b>Cancelado em {fdata(inv.encerrado_em)} por {inv.encerrado_por}.</b> Motivo: {inv.motivo_cancel}
+            <div className="mt-1 text-muted">Estava {inv.etapa_cancel === "LANCAMENTO" ? "no lançamento" : `na ${(NOME_ETAPA[inv.etapa_cancel] || "").toLowerCase()}`}. {((n) => `${n.toLocaleString("pt-BR")} ${n === 1 ? "leitura fica" : "leituras ficam"}`)(d.operadores.reduce((s: number, o: Row) => s + o.n, 0))} aqui para consulta. Nada foi gravado no Lieto.</div>
+          </div>
+        ) : <>
+          <Stepper etapa={inv.etapa} inicio={inv.etapa_inicial} />
+          <ProximoPasso d={d} t={t} recarregar={carregar} irPara={setAba} />
+        </>}
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Stat icon={<ScanBarcode className="size-3.5" />} label="Itens contados" value={<>{t.contados.toLocaleString("pt-BR")}<span className="text-base font-normal text-muted"> / {t.comSaldo.toLocaleString("pt-BR")}</span></>}
@@ -82,7 +94,7 @@ export default function Painel() {
 
         <Card>
           <div className="scroll-fino flex gap-1 overflow-x-auto border-b border-line px-3 pt-2">
-            {ABAS.map(({ k, n, i: Ic }) => {
+            {ABAS.filter((a) => inv.etapa !== "CANCELADO" || !["ajustes", "parecer"].includes(a.k)).map(({ k, n, i: Ic }) => {
               const cont = k === "auditoria" ? t.auditar : 0;
               return (
                 <button key={k} onClick={() => setAba(k)} className={cx("relative inline-flex h-10 items-center gap-2 px-3 text-[13px] font-medium transition",
@@ -563,6 +575,41 @@ function DetalheItem({ invId, etapa, codpro, fechar, recarregar }: { invId: numb
 }
 
 // ---------- exportar ----------
+// Cancelar: da contagem ao lançamento, até registrar os ajustes. Diz o que sai e o que fica, pede motivo e a palavra. Não reabre.
+function CancelarInventario({ d, recarregar }: { d: Dados; recarregar: () => void }) {
+  const { inv } = d, toast = useToast(), [usuario] = useResponsavel();
+  const [aberto, setAberto] = useState(false), [motivo, setMotivo] = useState(""), [palavra, setPalavra] = useState(""), [oc, setOc] = useState(false);
+  if (!NUM_ETAPA[inv.etapa] && inv.etapa !== "LANCAMENTO") return null;
+  const leituras = d.operadores.reduce((s, o) => s + o.n, 0);
+  const limite = new Date(Date.now() - 10 * 60000).toLocaleString("sv-SE"), recentes = new Set(d.operadores.filter((o) => o.ultima >= limite).map((o) => o.usuario)).size;
+  const pronto = motivo.trim().length >= 5 && palavra.trim().toUpperCase() === "CANCELAR";
+  async function cancelar() {
+    setOc(true);
+    try { await api(`inventarios/${inv.id}/cancelar`, { usuario, motivo, confirmacao: palavra }); toast("Inventário cancelado."); setAberto(false); recarregar(); }
+    catch (e) { toast((e as Error).message, "erro"); } finally { setOc(false); }
+  }
+  return (
+    <>
+      <Button variant="danger" disabled={!!inv.lancado_em}
+        title={inv.lancado_em ? `Os ajustes já foram registrados em ${fdata(inv.lancado_em)}. Para desfazer, estorne no Lieto.` : undefined}
+        onClick={() => { setMotivo(""); setPalavra(""); setAberto(true); }}><Ban className="size-4" />Cancelar inventário</Button>
+      <Modal aberto={aberto} onClose={() => !oc && setAberto(false)} titulo={`Cancelar “#${inv.id} ${inv.descricao}”?`}
+        rodape={<><Button variant="secondary" disabled={oc} onClick={() => setAberto(false)}>Voltar</Button><Button variant="danger" className="!border-rose-700 !bg-rose-700 !text-white hover:!bg-rose-800" loading={oc} disabled={!pronto} onClick={cancelar}>Cancelar inventário</Button></>}>
+        <ul className="list-disc space-y-1.5 pl-5 text-sm">
+          <li>Os coletores deixam de aceitar leituras deste inventário{recentes ? ` (${recentes} ${recentes === 1 ? "pessoa contou" : "pessoas contaram"} nos últimos 10 min)` : ""}.</li>
+          <li>As <b>{leituras.toLocaleString("pt-BR")} leituras</b> ficam guardadas para consulta.</li>
+          <li><b>Nada foi gravado no Lieto</b>: o estoque não muda.</li>
+          <li>Ele sai de Em andamento e vai para Encerrados, marcado como Cancelado. <b>Não dá para reabrir.</b></li>
+        </ul>
+        <label className="mt-4 block text-[13px] font-semibold">Motivo <span className="font-normal text-muted">(obrigatório, vai para o histórico)</span>
+          <textarea className={cx(inputCls, "mt-1 h-auto py-2")} rows={2} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} autoFocus /></label>
+        <label className="mt-3 block text-[13px] font-semibold">Digite CANCELAR para confirmar
+          <input className={cx(inputCls, "mt-1")} value={palavra} onChange={(e) => setPalavra(e.target.value)} onKeyDown={(e) => e.key === "Enter" && pronto && !oc && cancelar()} /></label>
+      </Modal>
+    </>
+  );
+}
+
 function Exportar({ d }: { d: Dados }) {
   const [aberto, setAberto] = useState(false);
   const itens = () => {

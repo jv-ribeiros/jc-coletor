@@ -24,7 +24,7 @@ export async function api<T = Row>(url: string, body?: unknown): Promise<T> {
 
 export const ETAPAS = ["CONTAGEM", "RECONTAGEM", "AUDITORIA", "LANCAMENTO", "ENCERRADO"] as const;
 export const NOME_ETAPA: Record<string, string> = {
-  PROGRAMADO: "Programado", CONTAGEM: "Contagem", RECONTAGEM: "Recontagem", AUDITORIA: "Auditoria", LANCAMENTO: "Lançamento e parecer", ENCERRADO: "Encerrado",
+  PROGRAMADO: "Programado", CONTAGEM: "Contagem", RECONTAGEM: "Recontagem", AUDITORIA: "Auditoria", LANCAMENTO: "Lançamento e parecer", ENCERRADO: "Encerrado", CANCELADO: "Cancelado",
 };
 export const NUM_ETAPA: Record<string, number> = { CONTAGEM: 1, RECONTAGEM: 2, AUDITORIA: 3 };
 

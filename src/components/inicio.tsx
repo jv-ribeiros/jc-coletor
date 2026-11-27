@@ -2,9 +2,9 @@
 // Tela inicial dividida em abas (rotas): Em andamento · Programação · Encerrados.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, Boxes, CalendarClock, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, ListChecks, Pencil, Play, Plus, ScanBarcode, Search, Trash2, TriangleAlert, Users,
+  ArrowRight, Boxes, CalendarClock, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock, ListChecks, Pencil, Play, Plus, Repeat, ScanBarcode, Search, Trash2, TriangleAlert, Users,
 } from "lucide-react";
 import { NovoInventario } from "@/components/novo-inventario";
 import { Topo } from "@/components/topo";
@@ -25,9 +25,9 @@ export function Inicio({ aba }: { aba: AbaInicio }) {
   const grupos = useMemo(() => {
     const l = invs ?? [];
     return {
-      andamento: l.filter((i) => !["ENCERRADO", "PROGRAMADO"].includes(i.etapa)),
+      andamento: l.filter((i) => !["ENCERRADO", "CANCELADO", "PROGRAMADO"].includes(i.etapa)),
       programacao: l.filter((i) => i.etapa === "PROGRAMADO").sort((a, b) => a.data_prevista.localeCompare(b.data_prevista)),
-      encerrados: l.filter((i) => i.etapa === "ENCERRADO"),
+      encerrados: l.filter((i) => i.etapa === "ENCERRADO" || i.etapa === "CANCELADO"),
     };
   }, [invs]);
   const atrasados = grupos.programacao.filter((i) => i.data_prevista < hoje).length, deHoje = grupos.programacao.filter((i) => i.data_prevista === hoje).length;
@@ -121,14 +121,14 @@ function CartaoInventario({ i }: { i: Row }) {
 
 // ---------- encerrados ----------
 function Encerrados({ itens }: { itens: Row[] }) {
-  const [busca, setBusca] = useState(""), [ano, setAno] = useState("");
+  const [busca, setBusca] = useState(""), [ano, setAno] = useState(""), [tipo, setTipo] = useState("");
   const anos = useMemo(() => [...new Set(itens.map((i) => (i.encerrado_em || i.snapshot_em || "").slice(0, 4)).filter(Boolean))].sort().reverse(), [itens]);
   const lista = useMemo(() => {
     const b = busca.trim().toUpperCase();
-    return itens.filter((i) => (!ano || (i.encerrado_em || i.snapshot_em || "").startsWith(ano)) && (!b || `#${i.id} ${i.descricao} ${i.nomemp || ""}`.toUpperCase().includes(b)))
+    return itens.filter((i) => (!tipo || i.etapa === tipo) && (!ano || (i.encerrado_em || i.snapshot_em || "").startsWith(ano)) && (!b || `#${i.id} ${i.descricao} ${i.nomemp || ""}`.toUpperCase().includes(b)))
       .sort((a, b) => String(b.encerrado_em || "").localeCompare(String(a.encerrado_em || "")));
-  }, [itens, busca, ano]);
-  const { itens: pag, controles } = usePaginacao(lista, 25, busca + ano);
+  }, [itens, busca, ano, tipo]);
+  const { itens: pag, controles } = usePaginacao(lista, 25, busca + ano + tipo);
   if (!itens.length) return <Card><Vazio icone={<Boxes className="size-6" />} titulo="Nenhum inventário encerrado ainda" /></Card>;
   return (
     <Card className="overflow-hidden">
@@ -137,6 +137,8 @@ function Encerrados({ itens }: { itens: Row[] }) {
           <Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted" />
           <input className={cx(inputCls, "pl-9")} placeholder="Buscar por número, nome ou empresa" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
+        <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">{[["", "Todos"], ["ENCERRADO", "Encerrados"], ["CANCELADO", "Cancelados"]].map(([k, n]) => (
+          <button key={k} onClick={() => setTipo(k)} className={cx("rounded-md px-3 py-1.5 text-[12.5px]", tipo === k ? "bg-white font-semibold text-ink shadow-sm" : "text-muted hover:text-ink")}>{n}</button>))}</div>
         <select className={cx(inputCls, "w-auto")} value={ano} onChange={(e) => setAno(e.target.value)}>
           <option value="">Todos os anos</option>{anos.map((a) => <option key={a}>{a}</option>)}
         </select>
@@ -150,8 +152,8 @@ function Encerrados({ itens }: { itens: Row[] }) {
             {pag.map((i) => (
               <tr key={i.id} className="border-b border-line/70 last:border-0 hover:bg-slate-50 [&>td]:px-4 [&>td]:py-2.5">
                 <td className="text-muted">{i.id}</td>
-                <td className="max-w-[420px]"><Link href={`/inventario/${i.id}`} className="block truncate font-medium hover:underline">{i.descricao}</Link>
-                  <div className="truncate text-[11px] text-muted">{descreverEscopo(i.escopo ? JSON.parse(i.escopo) : null)}</div></td>
+                <td className="max-w-[420px]"><div className="flex items-center gap-2"><Link href={`/inventario/${i.id}`} className="truncate font-medium hover:underline">{i.descricao}</Link>{i.etapa === "CANCELADO" && <Badge v="CANCELADO" />}</div>
+                  <div className="truncate text-[11px] text-muted">{i.etapa === "CANCELADO" ? i.motivo_cancel : descreverEscopo(i.escopo ? JSON.parse(i.escopo) : null)}</div></td>
                 <td>{fdata(i.snapshot_em)}</td><td>{fdata(i.encerrado_em)}</td>
                 <td className="text-right">{(i.leituras?.n ?? 0).toLocaleString("pt-BR")}</td><td className="text-right">{frsK(i.resumo?.valor ?? 0)}</td>
                 <td className="text-right"><Link href={`/inventario/${i.id}/relatorio`} target="_blank" className="text-[12px] font-semibold text-brand-700 hover:underline">Relatório</Link></td>
@@ -171,15 +173,21 @@ function Programacao({ itens, todos, recarregar, programar }: { itens: Row[]; to
   const hoje = hojeIso();
   const [mes, setMes] = useState(() => hoje.slice(0, 7)), [dia, setDia] = useState<string | null>(null);
   const [editar, setEditar] = useState<Row | null>(null), [iniciar, setIniciar] = useState<Row | null>(null);
+  const [fixas, setFixas] = useState<Row[]>([]), [editarFixa, setEditarFixa] = useState<Row | null>(null), [encerrarFixa, setEncerrarFixa] = useState<Row | null>(null);
   const toast = useToast(), { confirmar, dialogo } = useConfirm();
+  // sem a liberação de gestão do inventário a lista de fixas não vem: o bloco some e o resto funciona
+  const lerFixas = useCallback(() => api<Row[]>("inventarios/fixas").then(setFixas).catch(() => setFixas([])), []);
+  useEffect(() => { lerFixas(); }, [lerFixas, itens]);
+  const tudo = () => { recarregar(); lerFixas(); };
 
-  // calendário: programados (roxo) e realizados (verde) por dia
+  // calendário: programados (roxo), previstos pela fixa (vazado) e realizados (verde) por dia
   const porDia = useMemo(() => {
-    const m = new Map<string, { prog: number; feitos: number }>();
-    for (const i of itens) { const k = i.data_prevista; const x = m.get(k) || { prog: 0, feitos: 0 }; x.prog++; m.set(k, x); }
-    for (const i of todos) if (i.etapa !== "PROGRAMADO" && i.snapshot_em) { const k = i.snapshot_em.slice(0, 10); const x = m.get(k) || { prog: 0, feitos: 0 }; x.feitos++; m.set(k, x); }
+    const m = new Map<string, { prog: number; feitos: number; prev: number }>(), pega = (k: string) => { const x = m.get(k) || { prog: 0, feitos: 0, prev: 0 }; m.set(k, x); return x; };
+    for (const i of itens) pega(i.data_prevista).prog++;
+    for (const i of todos) if (i.etapa !== "PROGRAMADO" && i.etapa !== "CANCELADO" && i.snapshot_em) pega(i.snapshot_em.slice(0, 10)).feitos++;
+    for (const f of fixas) for (const d of f.previstas as string[]) pega(d).prev++;
     return m;
-  }, [itens, todos]);
+  }, [itens, todos, fixas]);
   const [a, mm] = mes.split("-").map(Number), primeiro = new Date(a, mm - 1, 1), diasMes = new Date(a, mm, 0).getDate();
   const vazios = (primeiro.getDay() + 6) % 7; // semana começando na segunda
   const mover = (n: number) => { const d = new Date(a, mm - 1 + n, 1); setMes(d.toLocaleDateString("sv-SE").slice(0, 7)); setDia(null); };
@@ -192,8 +200,9 @@ function Programacao({ itens, todos, recarregar, programar }: { itens: Row[]; to
   ];
 
   async function excluir(i: Row) {
-    if (!(await confirmar({ titulo: "Excluir esta programação?", texto: `${i.descricao} (${fdata(i.data_prevista)}). Nada foi contado ainda; só a programação é removida.`, acao: "Excluir", perigo: true }))) return;
-    try { await api(`inventarios/${i.id}/excluir`, {}); toast("Programação excluída."); recarregar(); } catch (e) { toast((e as Error).message, "erro"); }
+    const fx = i.fixa_id && fixas.find((f) => f.id === i.fixa_id);
+    if (!(await confirmar({ titulo: fx ? "Pular este dia?" : "Excluir esta programação?", texto: fx ? `${i.descricao}. Nada foi contado ainda. A programação fixa “${fx.nome}” continua: entra o seguinte.` : `${i.descricao} (${fdata(i.data_prevista)}). Nada foi contado ainda; só a programação é removida.`, acao: "Excluir", perigo: true }))) return;
+    try { await api(`inventarios/${i.id}/excluir`, {}); toast(fx ? "Dia pulado. O seguinte já está na agenda." : "Programação excluída."); tudo(); } catch (e) { toast((e as Error).message, "erro"); }
   }
 
   return (
@@ -215,6 +224,7 @@ function Programacao({ itens, todos, recarregar, programar }: { itens: Row[]; to
                 {k + 1}
                 <span className="mt-0.5 flex h-1.5 gap-0.5">
                   {x?.prog ? <span className={cx("size-1.5 rounded-full", iso < hoje ? "bg-rose-500" : "bg-indigo-500")} /> : null}
+                  {x?.prev && !x.prog ? <span className="size-1.5 rounded-full border border-indigo-500" /> : null}
                   {x?.feitos ? <span className="size-1.5 rounded-full bg-brand-500" /> : null}
                 </span>
               </button>
@@ -224,13 +234,18 @@ function Programacao({ itens, todos, recarregar, programar }: { itens: Row[]; to
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-indigo-500" />Programado</span>
           <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-500" />Vencido</span>
+          {fixas.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full border-[1.5px] border-indigo-500" />Previsto pela fixa</span>}
           <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-brand-500" />Realizado</span>
         </div>
         <Button className="mt-4 w-full" variant="secondary" onClick={programar}><CalendarPlus className="size-4" />Programar inventário</Button>
       </Card>
 
       <div className="space-y-5">
-        {!itens.length && <Card><Vazio icone={<CalendarClock className="size-6" />} titulo="Nenhum inventário programado" texto="Programe inventários por data (inclusive recorrentes: semanal, mensal…) e inicie com um clique no dia.">
+        {fixas.length > 0 && !dia && <section>
+          <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-muted">Programações fixas <span className="tabular opacity-70">({fixas.length})</span></h2>
+          <Card className="divide-y divide-line overflow-hidden">{fixas.map((f) => <LinhaFixa key={f.id} f={f} editar={() => setEditarFixa(f)} encerrar={() => setEncerrarFixa(f)} />)}</Card>
+        </section>}
+        {!itens.length && <Card><Vazio icone={<CalendarClock className="size-6" />} titulo="Nenhum inventário programado" texto="Programe inventários por data (inclusive recorrentes: todo dia útil, semanal, mensal… ou fixa, até você encerrar) e inicie com um clique no dia.">
           <Button onClick={programar}><CalendarPlus className="size-4" />Programar</Button></Vazio></Card>}
         {dia && <button onClick={() => setDia(null)} className="text-[13px] font-medium text-brand-700 hover:underline">← Ver toda a programação</button>}
         {secoes.filter(([, l]) => l.length || dia).map(([titulo, l, cor]) => (
@@ -245,6 +260,8 @@ function Programacao({ itens, todos, recarregar, programar }: { itens: Row[]; to
         ))}
       </div>
       {editar && <EditarProgramacao inv={editar} fechar={() => setEditar(null)} salvo={() => { setEditar(null); recarregar(); }} />}
+      {editarFixa && <EditarFixa f={editarFixa} fechar={() => setEditarFixa(null)} salvo={() => { setEditarFixa(null); tudo(); }} />}
+      {encerrarFixa && <EncerrarFixa f={encerrarFixa} fechar={() => setEncerrarFixa(null)} salvo={() => { setEncerrarFixa(null); tudo(); }} />}
       {iniciar && <IniciarProgramado inv={iniciar} fechar={() => setIniciar(null)} />}
       {dialogo}
     </div>
@@ -259,7 +276,9 @@ function LinhaProgramada({ i, hoje, iniciar, editar, excluir }: { i: Row; hoje: 
         <span className="text-[18px] font-bold tabular">{d.slice(8, 10)}</span><span className="text-[11px] font-semibold uppercase">{MESES[Number(d.slice(5, 7)) - 1].slice(0, 3)}</span>
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2"><span className="truncate font-semibold">{i.descricao}</span>{atrasado && <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700"><TriangleAlert className="size-3" />vencido</span>}</div>
+        <div className="flex items-center gap-2"><span className="truncate font-semibold">{i.descricao}</span>
+          {i.fixa_id && <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-bold text-indigo-800"><Repeat className="size-3" />fixa</span>}
+          {atrasado && <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700"><TriangleAlert className="size-3" />vencido</span>}</div>
         <div className="mt-0.5 flex flex-wrap gap-x-4 text-[12px] text-muted">
           <span className="truncate">{descreverEscopo(i.escopo ? JSON.parse(i.escopo) : null)}</span>
           <span>Começa em: <b className="text-ink">{NOME_ETAPA[i.etapa_inicial || "CONTAGEM"]}</b></span>
@@ -274,6 +293,60 @@ function LinhaProgramada({ i, hoje, iniciar, editar, excluir }: { i: Row; hoje: 
         <Button size="sm" onClick={iniciar}><Play className="size-3.5" />Iniciar</Button>
       </div>
     </div>
+  );
+}
+
+// ---------- programação fixa ----------
+const REGRAS_FIXA = [["util", "Todo dia útil (seg. a sex.)"], ["1", "Todo dia"], ["7", "Toda semana"], ["14", "A cada 15 dias"], ["mensal", "Todo mês"], ["trimestral", "A cada 3 meses"]] as const;
+const SEMANA = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
+const diaSem = (iso: string) => { const [a, m, d] = iso.split("-").map(Number); return `${SEMANA[new Date(a, m - 1, d).getDay()]} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`; };
+function LinhaFixa({ f, editar, encerrar }: { f: Row; editar: () => void; encerrar: () => void }) {
+  const depois = (f.previstas as string[]).slice(0, 2);
+  return (
+    <div className="flex flex-wrap items-center gap-4 px-4 py-3.5">
+      <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-800"><Repeat className="size-5" /></div>
+      <div className="min-w-[220px] flex-1">
+        <div className="font-semibold">{f.nome}</div>
+        <div className="mt-0.5 text-[12px] text-muted">{[f.regraNome, `desde ${fdata(f.inicio)}`, f.itens, f.responsavel && `Responsável ${f.responsavel}`, !f.antecipar && "Só na data"].filter(Boolean).join(" · ")}</div>
+        <div className="mt-0.5 text-[12px] text-muted">Próximo: <b className="text-ink">{f.proximo ? diaSem(f.proximo.data) : "—"}</b>{depois.length > 0 && ` · depois ${depois.map(diaSem).join(", ")}`} · {f.feitos} {f.feitos === 1 ? "feito" : "feitos"}</div>
+      </div>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="secondary" onClick={editar}>Editar</Button>
+        <Button size="sm" variant="danger" onClick={encerrar}>Encerrar</Button>
+      </div>
+    </div>
+  );
+}
+function EditarFixa({ f, fechar, salvo }: { f: Row; fechar: () => void; salvo: () => void }) {
+  const toast = useToast(), usuarios = useUsuariosLieto();
+  const [v, setV] = useState({ nome: f.nome, regra: f.regra, responsavel: f.responsavel || "", etapa: f.etapa || "CONTAGEM", obs: f.obs || "", antecipar: (f.antecipar ?? 1) === 1 }), [oc, setOc] = useState(false);
+  async function salvar() { setOc(true); try { await api(`inventarios/fixas/${f.id}`, v); toast("Programação fixa atualizada."); salvo(); } catch (e) { toast((e as Error).message, "erro"); setOc(false); } }
+  return (
+    <Modal aberto onClose={fechar} titulo="Editar programação fixa" largura="max-w-xl" descricao={`Vale para os próximos.${f.proximo ? ` O que já está na agenda (${fdata(f.proximo.data)}) muda junto.` : ""}`}
+      rodape={<><Button variant="secondary" onClick={fechar}>Cancelar</Button><Button onClick={salvar} loading={oc}>Salvar</Button></>}>
+      <div className="space-y-4">
+        <Field label="Nome"><input className={inputCls} value={v.nome} onChange={(e) => setV({ ...v, nome: e.target.value })} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Repetir"><select className={inputCls} value={v.regra} onChange={(e) => setV({ ...v, regra: e.target.value })}>{REGRAS_FIXA.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></Field>
+          <Field label="Responsável"><SelResponsavel usuarios={usuarios} valor={v.responsavel} mudar={(x) => setV({ ...v, responsavel: x })} /></Field>
+        </div>
+        <EtapaInicial valor={v.etapa} mudar={(x) => setV({ ...v, etapa: x })} />
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={v.antecipar} onChange={(e) => setV({ ...v, antecipar: e.target.checked })} /><b>Pode antecipar no coletor</b></label>
+        <Field label="Observação"><input className={inputCls} value={v.obs} onChange={(e) => setV({ ...v, obs: e.target.value })} placeholder="Ex.: parar expedição às 16h" /></Field>
+        <p className="flex items-center gap-2 text-[12px] text-muted"><Clock className="size-3.5" />A lista de itens é a da criação ({f.itens}). Para trocar a lista, encerre esta e crie outra.</p>
+      </div>
+    </Modal>
+  );
+}
+function EncerrarFixa({ f, fechar, salvo }: { f: Row; fechar: () => void; salvo: () => void }) {
+  const toast = useToast(), [excluirProximo, setExcluir] = useState(true), [oc, setOc] = useState(false);
+  async function ir() { setOc(true); try { await api(`inventarios/fixas/${f.id}/encerrar`, { excluirProximo: !!f.proximo && excluirProximo }); toast("Programação fixa encerrada."); salvo(); } catch (e) { toast((e as Error).message, "erro"); setOc(false); } }
+  return (
+    <Modal aberto onClose={fechar} titulo={`Encerrar “${f.nome}”?`}
+      rodape={<><Button variant="secondary" onClick={fechar}>Voltar</Button><Button variant="danger" className="!border-rose-700 !bg-rose-700 !text-white hover:!bg-rose-800" onClick={ir} loading={oc}>Encerrar programação</Button></>}>
+      <p className="text-sm">Não entra mais nenhum na agenda. {f.feitos > 0 ? `Os ${f.feitos} já feitos ficam como estão.` : ""}</p>
+      {f.proximo && <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={excluirProximo} onChange={(e) => setExcluir(e.target.checked)} /><span>Excluir também o próximo, de <b>{diaSem(f.proximo.data)}</b> (ainda não começou)</span></label>}
+    </Modal>
   );
 }
 

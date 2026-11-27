@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Factory, RefreshCw, Search, Send, X } from "lucide-react";
+import { Factory, Printer, RefreshCw, Search, Send, X } from "lucide-react";
 import { Topo, useConformidade } from "@/components/topo";
 import { Badge, Button, Card, Carregando, Field, Gaveta, Modal, Stat, Vazio, cx, inputCls, usePaginacao, useToast } from "@/components/ui";
 import { api, baixarCsv, fdata, fq, frs, type Row } from "@/lib/client";
@@ -122,6 +122,8 @@ function Detalhe({ id, fechar, mudou }: { id: number | null; fechar: () => void;
           </div>
           {p.erro && <div className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200"><b>Último erro:</b> {p.erro}</div>}
           {p.obs && <p className="mt-4 whitespace-pre-wrap text-sm"><b>Observação</b><br />{p.obs}</p>}
+          {/* a mesma tela do coletor: divide pela montagem do cadastro e imprime meia A4 por palete */}
+          {p.status !== "CANCELADA" && <a href={`/coletor/producao/${p.id}/paletes`} target="_blank" rel="noreferrer" className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] font-medium hover:bg-slate-50"><Printer className="size-4" />Folhas dos paletes</a>}
           <h3 className="mt-6 text-sm font-semibold">Insumos baixados {p.status !== "LANCADA" && <span className="font-normal text-muted">(prévia: recalculados no lançamento)</span>}</h3>
           <table className="mt-2 w-full text-[13px]">
             <thead className="text-left text-[12px] text-muted"><tr className="border-b border-line"><th className="py-2">Insumo</th><th>Qtd</th><th className="text-right">Custo por un. produzida</th></tr></thead>

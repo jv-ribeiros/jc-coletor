@@ -63,6 +63,7 @@ export default function Relatorio() {
             <span>Saldo congelado em <b className="text-ink">{fdata(inv.snapshot_em)}</b><br />Emitido em {new Date().toLocaleString("pt-BR")}</span>
           </div>
         </header>
+        {inv.etapa === "CANCELADO" && <div className="mt-4 rounded-xl border border-slate-300 bg-slate-100 p-3 text-[12px]"><b>Cancelado em {fdata(inv.encerrado_em)} por {inv.encerrado_por}.</b> Motivo: {inv.motivo_cancel}. Nada foi gravado no Lieto: os valores abaixo são o que foi apurado até o cancelamento.</div>}
 
         <section className="mt-5 grid grid-cols-[1.1fr_1fr_1fr] gap-3">
           <div className="rounded-xl bg-brand-800 p-4 text-white">
