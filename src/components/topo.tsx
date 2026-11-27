@@ -2,10 +2,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRightLeft, Boxes, ClipboardCheck, FileCode2, History, KeyRound, Undo2, PackageOpen, Factory, LayoutGrid, LogOut, ScanBarcode, ShieldAlert, ShieldCheck, Shuffle, Warehouse } from "lucide-react";
+import { ArrowRightLeft, Boxes, ClipboardCheck, FileCode2, History, KeyRound, Undo2, PackageOpen, PackageCheck, Factory, LayoutGrid, LogOut, ScanBarcode, ShieldAlert, ShieldCheck, Shuffle, Warehouse } from "lucide-react";
 import { sair, useEmpresa } from "@/components/acesso";
 import { cx } from "@/components/ui";
-import { api, sessao, type Row } from "@/lib/client";
+import { api, ls, sessao, type Row } from "@/lib/client";
 
 // Usuário logado (código e senha do Lieto). Mantém a assinatura antiga: [nome, setter sem efeito].
 export function useResponsavel() {
@@ -14,13 +14,20 @@ export function useResponsavel() {
   return [nome, (_: string) => {}] as const; // eslint-disable-line @typescript-eslint/no-unused-vars
 }
 
-// Rotinas liberadas para o usuário logado (a trava de verdade é no servidor)
+// Rotinas liberadas para o usuário logado (a trava de verdade é no servidor).
+// Padrão Carregando, O1: desenha na hora com a última liberação guardada no aparelho para este funcionário e confere em silêncio.
 let permCache: { token: string; s: Row | null } = { token: "", s: null };
+const permGuardada = (): Row | null => { const g = ls.get<{ codfun: number; s: Row } | null>("perm", null), u = sessao.usuario(); return g && u && g.codfun === u.codfun ? g.s : null; };
 export function usePode() {
-  const [s, setS] = useState<Row | null>(permCache.token === sessao.token() ? permCache.s : null);
+  const [s, setS] = useState<Row | null>(() => (permCache.token && permCache.token === sessao.token() ? permCache.s : null));
   useEffect(() => {
     let vivo = true;
-    const ler = () => { const token = sessao.token(); if (token) api("sessao").then((r) => { permCache = { token, s: r }; if (vivo) setS(r); }).catch(() => {}); };
+    if (!(permCache.token && permCache.token === sessao.token())) { const g = permGuardada(); if (g) setS(g); }
+    const ler = () => {
+      const token = sessao.token(), u = sessao.usuario();
+      if (!token) { if (vivo) setS(null); return; }
+      api("sessao").then((r) => { permCache = { token, s: r }; if (u) ls.set("perm", { codfun: u.codfun, s: { admin: r.admin, rotinas: r.rotinas } }); if (vivo) setS(r); }).catch(() => {});
+    };
     ler(); window.addEventListener("sessao", ler);
     return () => { vivo = false; window.removeEventListener("sessao", ler); };
   }, []);
@@ -41,13 +48,14 @@ export function useConformidade() {
   return s;
 }
 
-const PERM: Record<string, string[]> = { "/inventario": ["inventario", "inventario_gestao", "inventario_lancar"], "/producao": ["producao", "producao_gestao"], "/movimentos": ["transferencia", "transformacao", "kit", "retorno", "perda"], "/xml": ["xml"], "/permissoes": ["admin"], "/conferencia": ["conferencia_gestao"], "/auditoria": ["auditoria"] };
+const PERM: Record<string, string[]> = { "/inventario": ["inventario", "inventario_gestao", "inventario_lancar"], "/producao": ["producao", "producao_gestao"], "/movimentos": ["transferencia", "transformacao", "kit", "retorno", "perda"], "/xml": ["xml"], "/permissoes": ["admin"], "/conferencia": ["conferencia_gestao"], "/recebimento": ["recebimento_gestao"], "/auditoria": ["auditoria"] };
 const MODULOS = [
   { href: "/", n: "Painel", icone: LayoutGrid, ativo: (r: string) => r === "/" },
   { href: "/inventario", n: "Inventário", icone: Warehouse, ativo: (r: string) => r.startsWith("/inventario") },
   { href: "/producao", n: "Produção", icone: Factory, ativo: (r: string) => r.startsWith("/producao") },
   { href: "/movimentos", n: "Movimentos", icone: ArrowRightLeft, ativo: (r: string) => r.startsWith("/movimentos") },
   { href: "/conferencia", n: "Conferência", icone: ClipboardCheck, ativo: (r: string) => r.startsWith("/conferencia") },
+  { href: "/recebimento", n: "Recebimento", icone: PackageCheck, ativo: (r: string) => r.startsWith("/recebimento") },
   { href: "/xml", n: "XML", icone: FileCode2, ativo: (r: string) => r.startsWith("/xml") },
   { href: "/auditoria", n: "Auditoria", icone: History, ativo: (r: string) => r.startsWith("/auditoria") },
   { href: "/permissoes", n: "Liberações", icone: KeyRound, ativo: (r: string) => r.startsWith("/permissoes") },

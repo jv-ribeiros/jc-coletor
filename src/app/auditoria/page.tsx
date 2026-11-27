@@ -31,7 +31,7 @@ export default function Pagina() {
       if (r.total > 5000) toast(`O arquivo tem os 5.000 mais recentes de ${r.total}. Reduza o período.`, "erro");
     } catch (e) { toast((e as Error).message, "erro"); }
   }
-  if (!pode.pronto || !f) return <><Topo /><Carregando /></>;
+  if (!pode.pronto || !f) return <><Topo /><Carregando pagina /></>;
   if (!livre) return <><Topo /><main className="mx-auto max-w-[900px] p-6"><Card className="p-6 text-sm">Seu usuário não tem a liberação &quot;Auditoria: consultar&quot;.</Card></main></>;
   const ic = inputCls + " !w-auto";
   return (

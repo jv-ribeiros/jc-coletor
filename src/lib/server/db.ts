@@ -86,6 +86,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_conf_aberta ON conferencias (pedido) WHERE 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_conf_rom ON conferencias (romaneio) WHERE pedido IS NULL AND status IN ('CONTANDO','RECONTANDO');
 CREATE TABLE IF NOT EXISTS conf_volumes (id INTEGER PRIMARY KEY, romaneio INTEGER, pedido INTEGER, esperado INTEGER, contado INTEGER, corrigido INTEGER, usuario TEXT, em TEXT);
 CREATE TABLE IF NOT EXISTS conf_leituras (uid TEXT PRIMARY KEY, conf_id INTEGER, codpro TEXT, qtd REAL, modo TEXT, usuario TEXT, em TEXT);
+-- recebimento de compra: a contagem fica aqui (nada é gravado no Lieto); a nota de entrada é vinculada depois, no painel
+CREATE TABLE IF NOT EXISTS recebimentos (id INTEGER PRIMARY KEY, pedido INTEGER NOT NULL, codfor INTEGER, fornecedor TEXT, pedfor TEXT, itens TEXT NOT NULL, modo TEXT NOT NULL, status TEXT NOT NULL,
+  codfun INTEGER, usuario TEXT, criado_em TEXT, fechado_em TEXT, rec_por TEXT, rec_em TEXT, fim_em TEXT, fim_por TEXT, obs_fim TEXT, restante INTEGER DEFAULT 0, origem INTEGER,
+  chave_nfe TEXT, nota_numdoc INTEGER, nota TEXT, nota_como TEXT, nota_por TEXT, nota_em TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rec_aberto ON recebimentos (pedido) WHERE status IN ('CONTANDO','RECONTANDO');
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rec_nota ON recebimentos (nota_numdoc) WHERE nota_numdoc IS NOT NULL AND status <> 'CANCELADO';
+CREATE TABLE IF NOT EXISTS rec_leituras (uid TEXT PRIMARY KEY, rec_id INTEGER, codpro TEXT, codigo TEXT, qtd REAL, modo TEXT, validade TEXT, lote TEXT, etapa INTEGER, usuario TEXT, em TEXT);
+CREATE TABLE IF NOT EXISTS sem_validade (codpro TEXT PRIMARY KEY, por TEXT, em TEXT);
 CREATE TABLE IF NOT EXISTS sessoes (token TEXT PRIMARY KEY, codfun INTEGER, nome TEXT, nomfun TEXT, criado_em TEXT, visto_em TEXT);
 CREATE TABLE IF NOT EXISTS inv_fixas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, regra TEXT NOT NULL, inicio TEXT NOT NULL, ultima TEXT, codemp INTEGER, nomemp TEXT, escopo TEXT,
   etapa TEXT, responsavel TEXT, antecipar INTEGER DEFAULT 1, obs TEXT, ativa INTEGER DEFAULT 1, criada_por TEXT, criada_em TEXT, encerrada_por TEXT, encerrada_em TEXT);
@@ -112,9 +120,26 @@ export function db(): DatabaseSync {
   if (g.__invSchema !== versao) {
     g.__invDb.exec(SCHEMA);
     for (const sql of COLUNAS) { try { g.__invDb.exec(sql); } catch (e) { if (!/duplicate column/i.test((e as Error).message)) throw e; } }
+    migrar(g.__invDb);
     g.__invSchema = versao;
   }
   return g.__invDb;
+}
+
+// Migrações de dados, uma vez cada (marca em opcoes).
+function migrar(d: DatabaseSync) {
+  const feita = (k: string) => !!d.prepare("SELECT 1 FROM opcoes WHERE chave = ?").get(`migracao.${k}`);
+  const marcar = (k: string) => d.prepare("INSERT OR IGNORE INTO opcoes (chave, valor) VALUES (?, datetime('now','localtime'))").run(`migracao.${k}`);
+  // 1.2.9: o modo da expedição passa a ser do usuário ("ver quantidade e local"). Ninguém muda de modo: se o Sistema estava em
+  // Separação (ou nunca foi mudado), quem confere ganha a liberação; se estava em Cega, ninguém ganha.
+  if (!feita("conferencia_ver")) {
+    const modo = (d.prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.modo'").get() as { valor?: string } | undefined)?.valor;
+    d.exec("BEGIN IMMEDIATE");
+    try {
+      if (modo !== "CEGA") d.prepare("INSERT OR IGNORE INTO permissoes (codfun, rotina) SELECT codfun, 'conferencia_ver' FROM permissoes WHERE rotina = 'conferencia'").run();
+      marcar("conferencia_ver"); d.exec("COMMIT");
+    } catch (e) { d.exec("ROLLBACK"); throw e; }
+  }
 }
 
 export function tx<T>(fn: () => T): T {

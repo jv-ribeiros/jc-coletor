@@ -18,6 +18,7 @@ import * as EM from "@/lib/server/empresas";
 import * as RT from "@/lib/server/retorno";
 import * as CF from "@/lib/server/conferencia";
 import * as RC from "@/lib/server/receita";
+import * as RB from "@/lib/server/recebimento";
 import * as P from "@/lib/server/producao";
 import { Erro } from "@/lib/server/comum";
 
@@ -233,6 +234,27 @@ const rotas: [string, string, Handler][] = [
   ["POST", "conferencia/:id/fechar", ({ p, body, usuario }) => CF.fechar(Number(p[0]), usuario!, body.obs, body.volumes)],
   ["POST", "conferencia/:id/encerrar", ({ p, body, usuario }) => CF.encerrar(Number(p[0]), usuario!, body.obs)],
   ["POST", "conferencia/:id/cancelar", ({ p, body, usuario }) => CF.cancelar(Number(p[0]), usuario!, body.obs)],
+
+  // ---------- recebimento de compra ----------
+  ["GET", "recebimento/fila", ({ q, usuario }) => RB.fila(q, usuario!)],
+  ["GET", "recebimento/minhas", ({ usuario }) => RB.minhas(usuario!)],
+  ["GET", "recebimento/pedido/:n", ({ p, usuario }) => RB.ficha(Number(p[0]), usuario!)],
+  ["GET", "recebimento", () => RB.listar()],
+  ["POST", "recebimento", ({ body, usuario }) => RB.abrir(body, usuario!)],
+  ["GET", "sistema/recebimento", () => RB.opcoes()],
+  ["POST", "sistema/recebimento", ({ body, usuario }) => { exigirAdmin(usuario); return RB.salvarOpcoes(body, usuario!); }],
+  ["GET", "recebimento/:id", ({ p }) => RB.obter(Number(p[0]))],
+  ["GET", "recebimento/:id/gestao", ({ p }) => RB.gestao(Number(p[0]))],
+  ["GET", "recebimento/:id/codigo/:cod", ({ p }) => RB.codigo(Number(p[0]), p[1])],
+  ["GET", "recebimento/:id/notas", ({ p, q }) => RB.notas(Number(p[0]), q)],
+  ["POST", "recebimento/:id/leituras", ({ p, body, usuario }) => RB.contar(Number(p[0]), body, usuario!)],
+  ["POST", "recebimento/:id/falta", ({ p, body, usuario }) => RB.falta(Number(p[0]), body, usuario!)],
+  ["POST", "recebimento/:id/fechar", ({ p, usuario }) => RB.fechar(Number(p[0]), usuario!)],
+  ["POST", "recebimento/:id/encerrar", ({ p, body, usuario }) => RB.encerrar(Number(p[0]), body, usuario!)],
+  ["POST", "recebimento/:id/recontar", ({ p, usuario }) => RB.recontar(Number(p[0]), usuario!)],
+  ["POST", "recebimento/:id/cancelar", ({ p, body, usuario }) => RB.cancelar(Number(p[0]), body, usuario!)],
+  ["POST", "recebimento/:id/nota", ({ p, body, usuario }) => RB.vincular(Number(p[0]), body, usuario!)],
+  ["POST", "recebimento/:id/nota/remover", ({ p, usuario }) => RB.desvincular(Number(p[0]), usuario!)],
 
   // ---------- produção ----------
   ["GET", "producao/catalogo", () => P.catalogo()],

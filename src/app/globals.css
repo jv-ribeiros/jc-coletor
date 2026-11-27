@@ -33,6 +33,17 @@ body { background: var(--color-canvas); color: var(--color-ink); -webkit-font-sm
 @keyframes entra { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 @keyframes entra-lado { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes pulso { 0% { box-shadow: 0 0 0 0 rgb(100 121 143 / .45) } 100% { box-shadow: 0 0 0 14px rgb(100 121 143 / 0) } }
+/* Padrão Carregando (design/patterns/carregando_v1.html): esqueleto com a forma final; .espera reserva o lugar sem aparecer (0,2 s);
+   .fino é a linha do topo quando a tela já tem o resultado anterior e está conferindo por baixo. */
+@keyframes sk { 50% { opacity: .5 } }
+@keyframes fino { from { transform: translateX(-100%) } to { transform: translateX(250%) } }
+/* .tela .sk vence o fundo branco de .linha/.modulo/.heroi, que vêm depois no arquivo */
+.sk { display: block; background: #e2e7ec; border-radius: 10px; animation: sk 1.4s ease-in-out infinite; }
+.tela .sk { background: #e2e7ec; }
+.sk.espera, .tela .sk.espera { background: transparent; animation: none; }
+.fino { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; overflow: hidden; pointer-events: none; }
+.fino::after { content: ""; display: block; width: 40%; height: 100%; background: var(--color-brand-700); animation: fino 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .sk, .fino::after { animation: none; } }
 .anim-entra { animation: entra .18s ease-out both; }
 .anim-lado { animation: entra-lado .2s ease-out both; }
 .anim-pulso { animation: pulso 1.6s infinite; }
@@ -78,7 +89,12 @@ body.coletor button, body.coletor a, body.coletor label { touch-action: manipula
 .bt2 { min-height: 72px; border-radius: 22px; background: var(--sv); font-size: 17px; font-weight: 600; padding: 0 12px; display: flex; align-items: center; justify-content: center; text-align: center; }
 .bt2:disabled { opacity: .4; }
 .bt1:active, .bt2:active, .linha:active, .modulo:active, .ic:active { filter: brightness(.93); }
-.heroi { display: block; border-radius: 28px; background: var(--color-brand-800); color: #fff; padding: 20px; }
+/* "Você parou aqui": a vaga tem altura fixa, para o que entra (cartão, esqueleto, aviso ou "nada pendente") não mexer na grade */
+.heroi { display: flex; flex-direction: column; border-radius: 28px; background: var(--color-brand-800); color: #fff; padding: 20px; min-height: 228px; }
+.heroi > .esp { flex: 1; }
+.vaga-heroi { min-height: 228px; border-radius: 28px; display: flex; flex-direction: column; justify-content: center; }
+.vaga-heroi.vazio { justify-content: center; }
+.vaga-heroi.aviso-e, .vaga-heroi.aviso-a { justify-content: space-between; }
 .heroi small { display: block; font-size: 15px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .heroi b { display: block; font-size: 25px; line-height: 1.2; letter-spacing: -.02em; margin: 2px 0; overflow-wrap: anywhere; }
 .heroi .ir { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; min-height: 68px; border-radius: 20px; background: #fff; color: var(--color-brand-800); padding: 0 20px; font-size: 20px; font-weight: 650; }
@@ -140,6 +156,19 @@ body.coletor button, body.coletor a, body.coletor label { touch-action: manipula
 .dois { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .dois .bt2 { min-height: 66px; }
 .visor { min-height: clamp(76px, 13dvh, 112px); border-radius: 28px; background: #fff; display: flex; align-items: baseline; justify-content: center; align-content: center; flex-wrap: wrap; gap: 10px; font-size: 56px; font-weight: 700; letter-spacing: -.03em; line-height: 1; } .visor small { font-size: 20px; font-weight: 500; color: var(--color-muted); letter-spacing: 0; }
 .teclas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; } .teclas button { min-height: clamp(64px, 10dvh, 80px); border-radius: 24px; background: #fff; font-size: 32px; font-weight: 600; display: grid; place-items: center; } .teclas svg { width: 32px; height: 32px; }
+/* Recebimento (design/pages/recebimento_v2.html): o cartão mantém a altura; a tarja preta é a validade das próximas leituras */
+.foco.am { background: #fdf3dc; }
+.foco .rot { font-size: 14.5px; font-weight: 600; color: var(--color-muted); height: 20px; flex: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .foco.er .rot { color: #a51d39; } .foco.am .rot { color: #8a5a00; }
+.foco .vd { align-self: center; flex: none; font-size: 15px; font-weight: 700; background: #1a1f26; color: #fff; border-radius: 12px; padding: 6px 12px; margin-bottom: 8px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; } .foco .vd.vz { visibility: hidden; }
+.foco.am .diz { color: #8a5a00; }
+.bt2.br { background: #fff; }
+.visor.val { flex-direction: column; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 4px; min-height: 84px; font-size: 44px; flex: none; } .visor.val small { font-size: 13px; text-align: center; padding: 0 12px; } .visor.alerta { background: #fdf3dc; } .visor.alerta small { color: #8a5a00; font-weight: 650; }
+.teclas.cp { gap: 8px; } .teclas.cp button { min-height: 64px; font-size: 28px; } .teclas.cp button:disabled { opacity: .35; }
+.semval { min-height: 64px; width: 100%; border-radius: 22px; background: #fff; display: flex; align-items: center; gap: 12px; padding: 0 18px; font-size: 16.5px; font-weight: 600; flex: none; }
+.semval i { width: 28px; height: 28px; border-radius: 8px; border: 2.5px solid #b9c3cd; flex: none; display: grid; place-items: center; } .semval.on i { background: var(--color-brand-800); border-color: var(--color-brand-800); color: #fff; } .semval i svg { width: 20px; height: 20px; }
+.pilula.eu { background: var(--color-brand-800); color: #fff; }
+.linha small.am { color: #8a5a00; font-weight: 600; }
+.campo-ic.danfe.ok { border-color: var(--ok); background: #e2f3ea; } .campo-ic.danfe.ok svg { color: var(--ok); } .campo-ic.danfe.ok input { font-weight: 650; }
 
 /* telas de formulário (Tailwind): mesmo tamanho de toque e mesmos cantos */
 body.coletor .corpo input:not([type=checkbox]):not([type=radio]), body.coletor .corpo select, body.coletor .corpo textarea { min-height: 68px; border-radius: 22px; border: 2px solid transparent; font-size: 18px; padding-left: 18px; padding-right: 18px; box-shadow: none; }
@@ -170,6 +199,43 @@ body.coletor .inv .teclado button { min-height: clamp(50px, 8.4dvh, 68px); heigh
 body.coletor .inv .visorinv button, body.coletor .inv .visorinv input { min-height: 0; border-radius: 0; }
 body.coletor .inv input[placeholder^="Procurar"] { height: 64px; }
 body.coletor .inv div:has(> input[placeholder^="Procurar"]) > svg { top: 22px; }
+/* Inventário › Lista (design/pages/inventario-lista-coletor_v1.html, aprovado): em cima só busca e filtro; a linha inteira é o alvo.
+   Fica fixa só a faixa de cima (busca + filtro, e a faixa do filtro quando ligado). */
+body.coletor .inv .lfixo { position: sticky; top: 0; z-index: 10; background: var(--color-canvas); }
+body.coletor .inv .lbar { padding: 8px 12px; display: flex; gap: 8px; }
+body.coletor .inv .lbusca { position: relative; flex: 1; min-width: 0; }
+body.coletor .inv .lbusca input { width: 100%; height: 64px; background: #fff; border: 2px solid var(--color-line); padding: 0 10px 0 44px; font-size: 17px; outline: 0; }
+body.coletor .inv .lbusca input:not(:placeholder-shown) { padding-right: 52px; } body.coletor .inv .lbusca input::placeholder { font-size: 15.5px; }
+body.coletor .inv .lbusca input:focus { border-color: var(--color-brand-700); }
+body.coletor .inv .lbusca > svg { position: absolute; left: 13px; top: 20px; width: 24px; height: 24px; color: var(--color-muted); pointer-events: none; }
+body.coletor .inv .lbusca > button { position: absolute; right: 0; top: 0; width: 56px; display: grid; place-items: center; color: var(--color-muted); }
+body.coletor .inv button.lfil { position: relative; width: 64px; height: 64px; flex: none; display: grid; place-items: center; background: #fff; border: 2px solid var(--color-line); }
+body.coletor .inv button.lfil.on { background: var(--color-ink); border-color: var(--color-ink); color: #fff; }
+body.coletor .inv button.lfil i { position: absolute; top: -5px; right: -5px; min-width: 22px; height: 22px; border-radius: 99px; background: var(--color-brand-700); color: #fff; font-style: normal; font-size: 12px; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--color-canvas); }
+body.coletor .inv .lfaixa { padding: 0 12px 8px; }
+body.coletor .inv .lfaixa button { width: 100%; min-height: 56px; border-radius: 18px; background: var(--color-brand-800); color: #fff; display: flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 15px; font-weight: 600; text-align: left; }
+body.coletor .inv .lfaixa span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.coletor .inv .lfaixa em { font-style: normal; font-size: 14px; opacity: .85; display: flex; align-items: center; gap: 4px; }
+body.coletor .inv .lres { padding: 2px 16px 8px; font-size: 14px; color: var(--color-muted); } body.coletor .inv .lres b { color: var(--color-ink); }
+body.coletor .inv .lls { background: #fff; }
+body.coletor .inv button.lit { width: 100%; min-height: 72px; border-radius: 0; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 16px; border-bottom: 1px solid var(--color-line); text-align: left; }
+body.coletor .inv button.lit:active { background: var(--color-brand-50); }
+body.coletor .inv .lit .ck { width: 28px; height: 28px; border-radius: 99px; border: 2.5px solid #c5ced8; flex: none; display: grid; place-items: center; }
+body.coletor .inv .lit.ok { background: #f7f9fa; } body.coletor .inv .lit.ok .ck { background: var(--ok); border-color: var(--ok); color: #fff; }
+body.coletor .inv .lit > div { flex: 1; min-width: 0; }
+body.coletor .inv .lit b.n { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 16px; line-height: 1.25; font-weight: 600; }
+body.coletor .inv .lit.ok b.n { color: #6b7682; }
+body.coletor .inv .lit small { display: block; font-size: 13.5px; color: var(--color-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.coletor .inv .lit small .lc { color: var(--color-brand-800); font-weight: 600; } body.coletor .inv .lit small .lc.meu { color: var(--color-brand-600); }
+body.coletor .inv .lit small b { color: var(--color-ink); font-weight: 700; }
+body.coletor .inv .lit .df { flex: none; text-align: right; border-radius: 12px; padding: 6px 9px; background: #fdeaee; color: #a51d39; font-variant-numeric: tabular-nums; }
+body.coletor .inv .lit .df.sob { background: #e2f3ea; color: var(--ok); } body.coletor .inv .lit .df b { display: block; font-size: 17px; line-height: 1.2; } body.coletor .inv .lit .df small { font-size: 12px; color: inherit; opacity: .85; margin: 0; }
+body.coletor .inv button.lgh { position: sticky; z-index: 9; width: 100%; min-height: 52px; border-radius: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #e3e8ed; font-size: 14px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; border-bottom: 1px solid #d5dce3; text-align: left; }
+body.coletor .inv .lgh span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } body.coletor .inv .lgh small { font-weight: 600; color: var(--color-muted); letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+body.coletor .inv .lcd { margin: 4px 12px 12px; background: #fff; border-radius: 24px; padding: 22px 18px; text-align: center; }
+body.coletor .inv .lcd > svg { width: 52px; height: 52px; color: var(--ok); margin: 0 auto; } body.coletor .inv .lcd b { display: block; font-size: 20px; margin: 6px 0 2px; } body.coletor .inv .lcd p { font-size: 15px; color: var(--color-muted); margin: 0 0 14px; }
+body.coletor .inv .lcd .bt2 { width: 100%; min-height: 64px; margin-top: 8px; }
+body.coletor .inv .lfim { padding: 16px 12px 24px; }
 /* coletor de tela baixa: o Gravar do inventário não pode ficar atrás da barra */
 @media (max-height: 700px) {
   body.coletor .inv .teclado { gap: 6px; margin-top: 6px; } body.coletor .inv .teclado button { min-height: 50px; }

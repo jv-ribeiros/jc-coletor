@@ -5,16 +5,17 @@ import { ArrowRight, ArrowRightLeft, Factory, FileCode2, ClipboardCheck, Package
 import { Topo, useConformidade, usePode } from "@/components/topo";
 import { Alertas } from "@/components/alertas";
 import { Card, cx } from "@/components/ui";
-import { api, fq, type Row } from "@/lib/client";
+import { fq, type Row } from "@/lib/client";
+import { useCarga } from "@/lib/carga";
 
 export default function Painel() {
   const conf = useConformidade(), pode = usePode();
-  const [inv, setInv] = useState<Row[] | null>(null), [prod, setProd] = useState<Row | null>(null);
-  useEffect(() => {
-    api<Row[]>("inventarios").then(setInv).catch(() => setInv([]));
-    const hoje = new Date().toLocaleDateString("sv-SE");
-    api(`producao?de=${hoje}&ate=${hoje}`).then(setProd).catch(() => setProd(null));
-  }, []);
+  // Padrão Carregando: menu e cartões vêm da liberação guardada; só o número de cada cartão espera, em esqueleto, no lugar.
+  const [hoje, setHoje] = useState("");
+  useEffect(() => setHoje(new Date().toLocaleDateString("sv-SE")), []);
+  const cInv = useCarga<Row[]>("inventarios"), cProd = useCarga<Row>(hoje ? `producao?de=${hoje}&ate=${hoje}` : null);
+  const inv = cInv.d ?? (cInv.erro ? [] : null), prod = cProd.d ?? null, sk = <span className="sk h-3.5 w-3/5" />;
+  const prodSk = !prod && !cProd.erro;
   const rot = (id: string) => conf?.rotinas?.find((r: Row) => r.id === id);
   const prodHoje = (prod?.producoes || []) as Row[];
   const pend = (prod?.pendentes || []) as Row[];
@@ -22,9 +23,9 @@ export default function Painel() {
 
   const modulos = [
     { href: "/inventario", icone: Warehouse, nome: "Inventário", texto: "Contagem, recontagem, auditoria e ajuste de estoque.", rotina: "inventario",
-      info: inv ? `${inv.filter((i) => !["ENCERRADO", "CANCELADO", "PROGRAMADO"].includes(i.etapa)).length} em andamento · ${inv.filter((i) => i.etapa === "PROGRAMADO").length} programado(s)` : "…" },
+      info: inv ? `${inv.filter((i) => !["ENCERRADO", "CANCELADO", "PROGRAMADO"].includes(i.etapa)).length} em andamento · ${inv.filter((i) => i.etapa === "PROGRAMADO").length} programado(s)` : sk },
     { href: "/producao", icone: Factory, nome: "Produção", texto: "Acompanhar o que foi apontado no coletor.", rotina: "producao",
-      info: prod ? `Hoje: ${prodHoje.filter((p) => p.status === "LANCADA").length} lançada(s), ${fq(prodHoje.filter((p) => p.status === "LANCADA").reduce((s, p) => s + p.qtd, 0))} un.` : "…",
+      info: prod ? `Hoje: ${prodHoje.filter((p) => p.status === "LANCADA").length} lançada(s), ${fq(prodHoje.filter((p) => p.status === "LANCADA").reduce((s, p) => s + p.qtd, 0))} un.` : prodSk ? sk : "",
       alerta: nPend ? `${nPend} aguardando lançamento` : "" },
     { href: "/movimentos", icone: ArrowRightLeft, nome: "Movimentos do coletor", texto: "Transferência, transformação, kit, retorno e perdas: acompanhar e tratar pendência.", rotina: "movimentos" },
     { href: "/conferencia", icone: ClipboardCheck, nome: "Conferência de expedição", texto: "Acompanhar, ver divergência e encerrar.", rotina: "conferencia" },

@@ -3,6 +3,7 @@ import { db } from "./db";
 import * as ddl from "./ddl";
 import * as PM from "./permissoes";
 import * as X from "./xml";
+import * as RB from "./recebimento";
 import { listar as empresas } from "./empresas";
 import { agora, type Usuario } from "./comum";
 import { comConexao, consultar } from "./fb";
@@ -47,6 +48,7 @@ export async function listar(u: Usuario) {
     for (const c of todos("SELECT pedido, romaneio, usuario, erro, criado_em, aguarda_em FROM conferencias WHERE status IN ('CONTANDO','RECONTANDO') AND (erro IS NOT NULL OR aguarda_em IS NOT NULL OR criado_em < ?) ORDER BY id", ha(24 * H)))
       add(c.erro ? "E" : "P", `Conferência ${c.erro ? "com erro" : c.aguarda_em ? "com falta, esperando decisão" : "aberta há mais de 24 horas"}: ${c.pedido ? `pedido ${c.pedido}` : `romaneio ${c.romaneio}`}`, [c.erro, c.usuario].filter(Boolean).join(" · "), c.criado_em, "/conferencia", ["conferencia_gestao"]);
   });
+  await parte("recebimento", async () => { for (const a of await RB.alertas()) add(a.nivel, a.titulo, a.texto, a.em, a.href, ["recebimento_gestao"]); });
   await parte("inventário", () => {
     for (const i of todos("SELECT id, descricao, data_prevista FROM inventarios WHERE etapa = 'PROGRAMADO' AND data_prevista < ?", agora().slice(0, 10)))
       add("P", "Inventário programado atrasado", `#${i.id} ${i.descricao}`, i.data_prevista, "/inventario/programacao", ["inventario_gestao"]);

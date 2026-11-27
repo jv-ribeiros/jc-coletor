@@ -15,7 +15,7 @@ export default function Pagina() {
   const mudou = useCallback(() => { ler(); setVersao((v) => v + 1); }, [ler]);
   useEffect(() => { ler(); api("sessao").then((u) => setAdmin(!!u?.admin)).catch(() => {}); const t = setInterval(ler, 10_000); return () => clearInterval(t); }, [ler]);
   useEffect(() => { api("xml/itens").then((r) => setSem(r.itens.length)).catch(() => {}); }, [versao, s?.contagem?.PENDENTE, s?.contagem?.ERRO]);
-  if (!s) return <><Topo /><Carregando /></>;
+  if (!s) return <><Topo /><Carregando pagina /></>;
   return (
     <><Topo /><main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
       <h1 className="text-2xl font-semibold">Importação de XML</h1>

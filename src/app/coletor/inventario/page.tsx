@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, CircleAlert, Delete, History, Keyboard, KeyboardOff, Layers, ListChecks, LogOut, MapPin, Package, RefreshCw,
+  ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Delete, History, Keyboard, KeyboardOff, Layers, ListChecks, LogOut, MapPin, Package, RefreshCw,
   ScanBarcode, Search, Settings2, SlidersHorizontal, Undo2, Volume2, VolumeX, Warehouse, Wifi, WifiOff, X,
 } from "lucide-react";
 import { sair } from "@/components/acesso";
@@ -346,6 +346,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
   const mapaLista = useMemo(() => new Map((lista || []).map((x) => [x.codpro, x])), [lista]);
   const infoAud = prod && cat?.etapaNum === 3 ? mapaLista.get(prod.codpro) : undefined;
   const nPend = (lista || []).filter((x) => !x.feito).length;
+  const finalizar = cat ? <FinalizarEtapa invId={invId} etapa={cat.etapa} naoEnviadas={pend.length} feito={() => { carregarCat(); carregarLista(); }} /> : null;
   const prodRef = useRef<string | null>(null); prodRef.current = prod?.codpro ?? null;
   const vTotal = r4(total(expr) * (prod?.fator || 1)), ts = termos(expr);
   const corEtapa = ["bg-slate-500", "bg-sky-500", "bg-amber-500", "bg-rose-500"][cat?.etapaNum ?? 0];
@@ -529,7 +530,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
       <div className={cx("absolute inset-0 overflow-y-auto overscroll-contain", aba !== "lista" && "invisible")}>
         <div className="mx-auto max-w-xl">
         {!cat?.etapaNum ? <p className="p-6 text-center text-muted">Inventário sem etapa de contagem ativa.</p>
-          : <><div className="px-3 pt-3"><FinalizarEtapa invId={invId} etapa={cat.etapa} naoEnviadas={pend.length} feito={() => { carregarCat(); carregarLista(); }} /></div><ListaItens itens={lista} etapa={cat.etapaNum} local={local} escolher={(c) => escolher(c, c, "lista")} atualizar={carregarLista} /></>}
+          : <ListaItens itens={lista} etapa={cat.etapaNum} local={local} escolher={(c) => escolher(c, c, "lista")} finalizar={finalizar} />}
         </div>
       </div>
 
@@ -558,6 +559,7 @@ function App({ invId, trocar }: { invId: number; trocar: (i: number | null) => v
             <span className="min-w-0 flex-1"><span className="block truncate font-semibold">{cat?.descricao}</span><span className="text-[12px] text-muted">#{invId} · {cat ? NOME_ETAPA[cat.etapa] : ""}</span></span>
             <span className="text-[14px] font-semibold text-brand-700">Trocar</span>
           </button>
+          {cat?.etapaNum ? <div className="mt-3">{finalizar}</div> : null}
         </section>
         <section className="divide-y divide-line rounded-2xl bg-white shadow-sm">
           <button onClick={() => { irPara("contar"); setEditLocal(true); }} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
@@ -688,41 +690,50 @@ function MinhasLeituras({ rej, pend, minhas, validas, cancelar, descartar }:
   );
 }
 
-// ---------- lista de trabalho: busca, filtros, grupos ----------
-const ORD_AUD = [["valor", "Maior valor (R$)"], ["dif", "Maior diferença (qtd)"], ["falta", "Maiores faltas"], ["sobra", "Maiores sobras"], ["nome", "Produto A–Z"], ["cod", "Código"], ["local", "Local / rua"]] as const;
-const ORD_CONT = [["nome", "Produto A–Z"], ["cod", "Código"], ["local", "Local / rua"]] as const;
-const AGRUPAR = [["", "Sem agrupar"], ["grupo", "Grupo"], ["subgrupo", "Subgrupo"], ["marca", "Marca"], ["local", "Local / rua"]] as const;
+// ---------- lista de trabalho (design/pages/inventario-lista-coletor_v1.html, aprovado) ----------
+// Em cima da lista só a busca e o filtro; mostrar, ordem, agrupar, grupo e local moram no filtro. A linha cinza diz o que está valendo.
+// A busca procura em todos os itens, a fazer e feitos (os feitos por último, com ✓): o produto nunca "some" porque alguém já contou.
+// Filtro ligado vira uma faixa larga com Limpar. Finalizar fica no fim da lista, no "Tudo contado" e em Ajustes.
+const ORD_AUD = [["valor", "Maior valor (R$)"], ["dif", "Maior diferença (qtd)"], ["falta", "Maiores faltas"], ["sobra", "Maiores sobras"], ["nome", "Produto A–⁠Z"], ["cod", "Código"], ["local", "Local / rua"]] as const;
+const ORD_CONT = [["nome", "Produto A–⁠Z"], ["cod", "Código"], ["local", "Local / rua"]] as const;
+const AGRUPAR = [["", "Não agrupar"], ["local", "Local / rua"], ["grupo", "Grupo"], ["subgrupo", "Subgrupo"], ["marca", "Marca"]] as const;
+const MOSTRAR = [["pend", "A fazer"], ["feito", "Feitos"], ["todos", "Todos"]] as const;
+const TUDO: Record<number, string> = { 1: "Tudo contado", 2: "Tudo recontado", 3: "Tudo auditado" };
 const separaLocais = (s: unknown) => String(s || "").split(",").map((x) => x.trim()).filter((x) => x && x !== "0");
 type Filtros = { status: string; tipo: string; ord: string; loc: string; grupo: string; agrupar: string };
 
-function ListaItens({ itens, etapa, local, escolher, atualizar }: { itens: Row[] | null; etapa: number; local: string; escolher: (codpro: string) => void; atualizar: () => Promise<void> }) {
-  const aud = etapa === 3, chaveF = "lst" + etapa;
-  const padrao: Filtros = { status: "pend", tipo: "", ord: aud ? "valor" : "nome", loc: "", grupo: "", agrupar: aud ? "" : "grupo" };
+function ListaItens({ itens, etapa, local, escolher, finalizar }: { itens: Row[] | null; etapa: number; local: string; escolher: (codpro: string) => void; finalizar: React.ReactNode }) {
+  const aud = etapa === 3, chaveF = "lista" + etapa; // chave nova: quem tinha "agrupar por grupo" salvo da tela antiga começa sem agrupar
+  const padrao: Filtros = { status: "pend", tipo: "", ord: aud ? "valor" : "nome", loc: "", grupo: "", agrupar: "" };
   const [f, setF] = useState<Filtros>(() => ({ ...padrao, ...ls.get<Partial<Filtros>>(chaveF, {}) }));
   const [busca, setBusca] = useState(""), [limite, setLimite] = useState(150), [painel, setPainel] = useState(false), [fechados, setFechados] = useState<Set<string>>(new Set());
-  const [girando, setGirando] = useState(false);
-  const refBarra = useRef<HTMLDivElement>(null), [altBarra, setAltBarra] = useState(150);
+  const podeFin = usePode()(["inventario_finalizar", "inventario_gestao"]);
+  const refTopo = useRef<HTMLDivElement>(null), [altTopo, setAltTopo] = useState(80);
   useEffect(() => {
-    const el = refBarra.current; if (!el) return;
-    const ro = new ResizeObserver(() => setAltBarra(el.offsetHeight)); ro.observe(el); return () => ro.disconnect();
+    const el = refTopo.current; if (!el) return;
+    const ro = new ResizeObserver(() => setAltTopo(el.offsetHeight)); ro.observe(el); return () => ro.disconnect();
   }, []);
   const muda = (p: Partial<Filtros>) => { const n = { ...f, ...p }; setF(n); ls.set(chaveF, n); setLimite(150); };
-  const todos = itens || [];
+  const limparFiltro = () => muda({ status: padrao.status, tipo: "", loc: "", grupo: "" });
+  const todos = useMemo(() => itens || [], [itens]);
+  const W: Record<string, string> = aud ? { pend: "a auditar", feito: "auditados", todos: "itens" } : { pend: "a fazer", feito: "feitos", todos: "itens" };
 
   const locais = useMemo(() => [...new Set(todos.flatMap((i) => separaLocais(i.locais)))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [todos]);
   const gruposOpc = useMemo(() => [...new Set(todos.map((i) => i.grupo || "Sem grupo"))].sort(), [todos]);
-  const nPend = todos.filter((i) => !i.feito).length;
+  const palavras = useMemo(() => norm(busca.trim()).split(/\s+/).filter(Boolean), [busca]);
+  // grupo, local e falta/sobra valem também na busca; "mostrar" (a fazer/feitos) não
+  const noFiltro = useMemo(() => todos.filter((i) => {
+    if (aud && f.tipo === "falta" && !((i.dif ?? 0) < 0)) return false;
+    if (aud && f.tipo === "sobra" && !((i.dif ?? 0) > 0)) return false;
+    if (f.loc && !separaLocais(i.locais).includes(f.loc)) return false;
+    if (f.grupo && (i.grupo || "Sem grupo") !== f.grupo) return false;
+    return true;
+  }), [todos, aud, f.tipo, f.loc, f.grupo]);
+  const pendF = noFiltro.filter((i) => !i.feito).length, nPend = todos.filter((i) => !i.feito).length;
   const lista = useMemo(() => {
-    const t = norm(busca.trim()).split(/\s+/).filter(Boolean);
-    const l = todos.filter((i) => {
-      if (f.status === "pend" && i.feito) return false;
-      if (f.status === "feito" && !i.feito) return false;
-      if (aud && f.tipo === "falta" && !((i.dif ?? 0) < 0)) return false;
-      if (aud && f.tipo === "sobra" && !((i.dif ?? 0) > 0)) return false;
-      if (f.loc && !separaLocais(i.locais).includes(f.loc)) return false;
-      if (f.grupo && (i.grupo || "Sem grupo") !== f.grupo) return false;
-      if (t.length) { const h = norm(`${i.nompro} ${i.codpro} ${i.locais || ""} ${i.grupo} ${i.subgrupo} ${i.marca}`); if (!t.every((w) => h.includes(w))) return false; }
-      return true;
+    const l = noFiltro.filter((i) => {
+      if (palavras.length) { const h = norm(`${i.nompro} ${i.codpro} ${i.locais || ""} ${i.grupo} ${i.subgrupo} ${i.marca}`); return palavras.every((w) => h.includes(w)); }
+      return f.status === "pend" ? !i.feito : f.status === "feito" ? !!i.feito : true;
     });
     const cmp: Record<string, (a: Row, b: Row) => number> = {
       valor: (a, b) => Math.abs(b.valor ?? 0) - Math.abs(a.valor ?? 0), dif: (a, b) => Math.abs(b.dif ?? 0) - Math.abs(a.dif ?? 0),
@@ -730,111 +741,112 @@ function ListaItens({ itens, etapa, local, escolher, atualizar }: { itens: Row[]
       nome: (a, b) => a.nompro.localeCompare(b.nompro), cod: (a, b) => a.codpro.localeCompare(b.codpro, undefined, { numeric: true }),
       local: (a, b) => (separaLocais(a.locais)[0] || "~").localeCompare(separaLocais(b.locais)[0] || "~", undefined, { numeric: true }),
     };
-    return l.sort((a, b) => (cmp[f.ord] || cmp.nome)(a, b) || a.nompro.localeCompare(b.nompro));
-  }, [todos, busca, f, aud]);
+    const ord = cmp[f.ord] || cmp.nome;
+    return l.sort((a, b) => (palavras.length ? Number(!!a.feito) - Number(!!b.feito) : 0) || ord(a, b) || a.nompro.localeCompare(b.nompro));
+  }, [noFiltro, palavras, f.status, f.ord]);
 
-  // agrupamento (grupo / subgrupo / marca / local), com total por grupo
   const secoes = useMemo(() => {
     if (!f.agrupar) return [{ k: "", itens: lista }];
     const m = new Map<string, Row[]>();
     for (const i of lista) {
-      const ks = f.agrupar === "local" ? (separaLocais(i.locais).length ? [separaLocais(i.locais)[0]] : ["Sem local"]) : [i[f.agrupar] || `Sem ${f.agrupar}`];
-      for (const k of ks) { if (!m.has(k)) m.set(k, []); m.get(k)!.push(i); }
+      const k = f.agrupar === "local" ? separaLocais(i.locais)[0] || "Sem local" : i[f.agrupar] || `Sem ${f.agrupar}`;
+      if (!m.has(k)) m.set(k, []); m.get(k)!.push(i);
     }
-    const peso = (l: Row[]) => aud ? l.reduce((s, i) => s + Math.abs(i.valor ?? 0), 0) : 0;
+    const peso = (l: Row[]) => (aud ? l.reduce((s, i) => s + Math.abs(i.valor ?? 0), 0) : 0);
     return [...m.entries()].map(([k, it]) => ({ k, itens: it })).sort((a, b) => peso(b.itens) - peso(a.itens) || a.k.localeCompare(b.k, undefined, { numeric: true }));
   }, [lista, f.agrupar, aud]);
 
-  const ativos = [
-    f.tipo && { k: "tipo", n: f.tipo === "falta" ? "Só faltas" : "Só sobras" }, f.grupo && { k: "grupo", n: f.grupo }, f.loc && { k: "loc", n: `Local ${f.loc}` },
-  ].filter(Boolean) as { k: keyof Filtros; n: string }[];
-  const ords = aud ? ORD_AUD : ORD_CONT;
+  const reais = [aud && f.tipo && (f.tipo === "falta" ? "Só faltas" : "Só sobras"), f.grupo, f.loc].filter(Boolean) as string[];
+  const faixa = [f.status !== padrao.status && `Mostrar: ${MOSTRAR.find(([k]) => k === f.status)?.[1].toLowerCase()}`, ...reais].filter(Boolean) as string[];
+  const ords = aud ? ORD_AUD : ORD_CONT, ordN = ords.find(([k]) => k === f.ord)?.[1] || "";
+  const resumo = palavras.length
+    ? <><b>{fq(lista.length)}</b> {lista.length === 1 ? "encontrado" : "encontrados"} {reais.length ? "com o filtro" : "em todos os itens"}</>
+    : <><b>{fq(lista.length)}</b> {W[f.status]}{reais.length ? ` de ${fq(todos.length)}` : ""} · {f.agrupar ? `por ${AGRUPAR.find(([k]) => k === f.agrupar)?.[1].toLowerCase()}` : ordN}</>;
+  const tudoFeito = !palavras.length && !reais.length && f.status === "pend" && todos.length > 0 && nPend === 0;
   let mostrados = 0;
 
   return (
     <div>
-      <div ref={refBarra} className="sticky top-0 z-10 space-y-2 border-b border-line bg-slate-100 px-3 pb-2 pt-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-3 size-5 text-muted" />
-            <input value={busca} onChange={(e) => { setBusca(e.target.value); setLimite(150); }} placeholder="Procurar: nome, código, grupo, rua" autoComplete="off"
-              className="h-11 w-full rounded-xl border border-line bg-white pl-10 pr-9 text-[15px] outline-none focus:border-brand-600" />
-            {busca && <button onClick={() => setBusca("")} className="absolute right-1 top-1 grid size-9 place-items-center text-muted"><X className="size-5" /></button>}
+      <div ref={refTopo} className="lfixo">
+        <div className="lbar">
+          <div className="lbusca">
+            <Search />
+            <input value={busca} onChange={(e) => { setBusca(e.target.value); setLimite(150); }} placeholder={aud ? "Procurar nas diferenças" : "Procurar nome, código ou rua"} autoComplete="off" enterKeyHint="search" />
+            {busca && <button onClick={() => setBusca("")} aria-label="Limpar busca"><X className="size-6" /></button>}
           </div>
-          <button onClick={() => setPainel(true)} className={cx("relative grid size-11 shrink-0 place-items-center rounded-xl", ativos.length || f.agrupar ? "bg-ink text-white" : "bg-white ring-1 ring-line")}>
-            <SlidersHorizontal className="size-5" />
-            {ativos.length > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-brand-500 text-[11px] font-bold text-white">{ativos.length}</span>}
-          </button>
+          <button onClick={() => setPainel(true)} className={cx("lfil", faixa.length > 0 && "on")} aria-label="Mostrar e ordenar"><SlidersHorizontal className="size-6" />{faixa.length > 0 && <i>{faixa.length}</i>}</button>
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-white p-1 ring-1 ring-line">
-          {([["pend", "A fazer", nPend], ["feito", "Feitos", todos.length - nPend], ["todos", "Todos", todos.length]] as const).map(([k, n, c]) => (
-            <button key={k} onClick={() => muda({ status: k })} className={cx("h-9 rounded-lg text-[13px] font-semibold", f.status === k ? "bg-ink text-white" : "text-muted")}>{n} <span className="tabular opacity-70">{c}</span></button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 overflow-x-auto text-[12px]">
-          <button onClick={() => setPainel(true)} className="shrink-0 rounded-full bg-white px-2.5 py-1 font-medium text-ink ring-1 ring-line">↕ {ords.find(([k]) => k === f.ord)?.[1]}</button>
-          {f.agrupar && <button onClick={() => muda({ agrupar: "" })} className="flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1 font-medium ring-1 ring-line">Por {AGRUPAR.find(([k]) => k === f.agrupar)?.[1].toLowerCase()} <X className="size-3" /></button>}
-          {ativos.map((a) => <button key={a.k} onClick={() => muda({ [a.k]: "" })} className="flex shrink-0 items-center gap-1 rounded-full bg-brand-700 px-2.5 py-1 font-medium text-white">{a.n} <X className="size-3" /></button>)}
-          <span className="ml-auto shrink-0 tabular text-muted">{lista.length}{lista.length !== todos.length ? ` de ${todos.length}` : ""}</span>
-          <button onClick={async () => { setGirando(true); await atualizar(); setGirando(false); }} className="grid size-7 shrink-0 place-items-center rounded-full bg-white ring-1 ring-line"><RefreshCw className={cx("size-3.5", girando && "animate-spin")} /></button>
-        </div>
+        {faixa.length > 0 && <div className="lfaixa"><button onClick={limparFiltro}><span>{faixa.join(" · ")}</span><em>Limpar <X className="size-[18px]" /></em></button></div>}
       </div>
 
-      {itens === null ? <div className="px-4 py-10 text-center text-[14px] text-muted">Carregando lista…</div>
-        : !lista.length ? <div className="px-4 py-10 text-center text-[14px] text-muted">{todos.length ? (f.status === "pend" && !nPend ? "Tudo feito por aqui." : "Nenhum item com esses filtros.") : "Lista vazia."}</div>
-        : (
-        <div className="pb-2">
-          {secoes.map((s) => {
-            if (mostrados >= limite) return null;
-            const aberto = !fechados.has(s.k), pendS = s.itens.filter((i) => !i.feito).length, valS = aud ? s.itens.reduce((a, i) => a + (i.valor ?? 0), 0) : 0;
-            const vis = aberto ? s.itens.slice(0, Math.max(0, limite - mostrados)) : [];
-            mostrados += aberto ? vis.length : 1;
-            return (
-              <section key={s.k || "_"}>
-                {f.agrupar && (
-                  <button onClick={() => setFechados((x) => { const n = new Set(x); if (n.has(s.k)) n.delete(s.k); else n.add(s.k); return n; })}
-                    style={{ top: altBarra }} className="sticky z-[5] flex w-full items-center gap-2 border-b border-line bg-slate-200 px-3 py-2 text-left">
-                    {aberto ? <ChevronDown className="size-4 shrink-0" /> : <ChevronRight className="size-4 shrink-0" />}
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-wide">{s.k}</span>
-                    <span className="shrink-0 text-[12px] font-semibold tabular text-muted">{pendS ? `${pendS} a fazer` : "✓"} · {s.itens.length}</span>
-                    {aud && <span className={cx("shrink-0 text-[12px] font-bold tabular", valS < 0 ? "text-rose-700" : "text-brand-700")}>{frs(valS)}</span>}
-                  </button>
-                )}
-                <ul className="divide-y divide-line bg-white">
-                  {vis.map((i) => <LinhaItem key={i.codpro} i={i} aud={aud} local={local} escolher={escolher} />)}
-                </ul>
-              </section>
-            );
-          })}
-          {lista.length > limite && <button onClick={() => setLimite(limite + 200)} className="h-12 w-full border-t border-line bg-white text-[14px] font-semibold text-brand-700">Mostrar mais</button>}
-        </div>
-      )}
+      {itens === null ? <EsqLista />
+        : !todos.length ? <div className="lcd"><b>Lista vazia</b><p>Nenhum item nesta etapa.</p></div>
+        : tudoFeito ? (
+          <div className="lcd" style={{ marginTop: 10 }}><CircleCheck /><b>{TUDO[etapa]}</b>
+            <p>{fq(todos.length)} {todos.length === 1 ? "item" : "itens"} com leitura. {podeFin ? "Confira as leituras antes de finalizar." : "Avise o responsável para finalizar."}</p>
+            {podeFin && finalizar}
+            <button className="bt2" onClick={() => muda({ status: "feito" })}>Ver os {fq(todos.length)} {W.feito}</button>
+          </div>)
+        : <>
+          {lista.length > 0 && <div className="lres">{resumo}</div>}
+          {!lista.length ? (palavras.length
+            ? <div className="lcd"><b>Nada com “{busca.trim()}” {reais.length ? "com este filtro" : "neste inventário"}</b><p>{reais.length ? "Limpe o filtro para procurar em todos os itens." : "Confira o nome ou o código. Só aparecem os produtos deste inventário."}</p>
+                <button className="bt2" onClick={() => setBusca("")}>Limpar busca</button>{reais.length > 0 && <button className="bt2" onClick={limparFiltro}>Limpar filtro</button>}</div>
+            : <div className="lcd"><b>Nada {W[f.status]}{reais.length ? ` em ${reais.join(" · ")}` : ""}</b><p>{f.status === "pend" && noFiltro.length && !pendF ? `${noFiltro.length === 1 ? "O item" : `Os ${fq(noFiltro.length)} itens`} deste filtro já ${noFiltro.length === 1 ? "foi" : "foram"} ${aud ? "auditado" : "contado"}${noFiltro.length === 1 ? "" : "s"}.` : "O filtro esconde os outros itens."}</p>
+                <button className="bt2" onClick={limparFiltro}>Limpar filtro</button></div>)
+          : <>
+            {secoes.map((s) => {
+              if (mostrados >= limite) return null;
+              const aberto = !fechados.has(s.k), pendS = s.itens.filter((i) => !i.feito).length, valS = aud ? s.itens.reduce((a, i) => a + (i.valor ?? 0), 0) : 0;
+              const vis = aberto ? s.itens.slice(0, Math.max(0, limite - mostrados)) : [];
+              mostrados += aberto ? vis.length : 1;
+              return (
+                <section key={s.k || "_"}>
+                  {f.agrupar && (
+                    <button onClick={() => setFechados((x) => { const n = new Set(x); if (n.has(s.k)) n.delete(s.k); else n.add(s.k); return n; })} style={{ top: altTopo }} className="lgh">
+                      {aberto ? <ChevronDown className="size-[18px] shrink-0" /> : <ChevronRight className="size-[18px] shrink-0" />}
+                      <span>{s.k}</span>
+                      <small>{pendS ? `${fq(pendS)} ${W.pend}` : "✓"} · {fq(s.itens.length)}</small>
+                      {aud && <small className={valS < 0 ? "!text-rose-700" : "!text-brand-700"}>{frs(valS)}</small>}
+                    </button>
+                  )}
+                  <div className="lls">{vis.map((i) => <LinhaItem key={i.codpro} i={i} aud={aud} local={local} escolher={escolher} />)}</div>
+                </section>
+              );
+            })}
+            {lista.length > limite && <div className="px-3 pt-3"><button onClick={() => setLimite(limite + 200)} className="bt2 w-full">Mostrar mais ({fq(lista.length - limite)})</button></div>}
+            {podeFin && !palavras.length && <div className="lfim">{finalizar}</div>}
+          </>}
+        </>}
 
       {painel && (
-        <Folha titulo="Filtros e ordem" fechar={() => setPainel(false)}
-          rodape={<div className="flex gap-2">
-            <button onClick={() => { setF(padrao); ls.set(chaveF, padrao); }} className="h-12 flex-1 rounded-xl bg-slate-100 text-[15px] font-semibold">Limpar</button>
-            <button onClick={() => setPainel(false)} className="h-12 flex-[2] rounded-xl bg-brand-600 text-[15px] font-bold text-white">Ver {lista.length} itens</button>
+        <Folha titulo="Mostrar e ordenar" fechar={() => setPainel(false)}
+          rodape={<div className="grid grid-cols-[1fr_2fr] gap-2">
+            <button onClick={() => { setF(padrao); ls.set(chaveF, padrao); setLimite(150); }} className="rounded-xl bg-slate-100 text-[16px] font-bold">Limpar</button>
+            <button onClick={() => setPainel(false)} className="rounded-xl bg-brand-700 text-[16px] font-bold text-white">Ver {fq(lista.length)} {lista.length === 1 ? "item" : "itens"}</button>
           </div>}>
-          <Bloco titulo="Ordenar por">
-            <div className="grid grid-cols-2 gap-2">{ords.map(([k, n]) => <Opcao key={k} ativo={f.ord === k} onClick={() => muda({ ord: k })}>{n}</Opcao>)}</div>
+          <Bloco titulo="Mostrar">
+            <div className="grid grid-cols-3 gap-2">{MOSTRAR.map(([k, n]) => <Opcao key={k} ativo={f.status === k} sub={fq(k === "pend" ? pendF : k === "feito" ? noFiltro.length - pendF : noFiltro.length)} onClick={() => muda({ status: k })}>{n}</Opcao>)}</div>
           </Bloco>
-          <Bloco titulo="Agrupar por">
+          <Bloco titulo="Ordem">
+            <div className={cx("grid gap-2", aud ? "grid-cols-2" : "grid-cols-3")}>{ords.map(([k, n]) => <Opcao key={k} ativo={f.ord === k} onClick={() => muda({ ord: k })}>{n}</Opcao>)}</div>
+          </Bloco>
+          <Bloco titulo="Agrupar">
             <div className="grid grid-cols-3 gap-2">{AGRUPAR.map(([k, n]) => <Opcao key={k} ativo={f.agrupar === k} onClick={() => muda({ agrupar: k })}>{n}</Opcao>)}</div>
           </Bloco>
           {aud && (
             <Bloco titulo="Diferença">
-              <div className="grid grid-cols-3 gap-2">{([["", "Todas"], ["falta", "Faltas"], ["sobra", "Sobras"]] as const).map(([k, n]) => <Opcao key={k} ativo={f.tipo === k} onClick={() => muda({ tipo: k })}>{n}</Opcao>)}</div>
+              <div className="grid grid-cols-3 gap-2">{([["", "Todas"], ["falta", "Só faltas"], ["sobra", "Só sobras"]] as const).map(([k, n]) => <Opcao key={k} ativo={f.tipo === k} onClick={() => muda({ tipo: k })}>{n}</Opcao>)}</div>
             </Bloco>
           )}
-          <Bloco titulo="Grupo">
-            <select value={f.grupo} onChange={(e) => muda({ grupo: e.target.value })} className="h-12 w-full rounded-xl border border-line bg-white px-3 text-[15px] font-medium">
+          <Bloco titulo="Só deste grupo">
+            <select value={f.grupo} onChange={(e) => muda({ grupo: e.target.value })} className="h-16 w-full rounded-2xl border-0 bg-white px-4 text-[16px] font-semibold">
               <option value="">Todos os grupos</option>{gruposOpc.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </Bloco>
           {locais.length > 0 && (
-            <Bloco titulo="Local / rua">
-              <select value={locais.includes(f.loc) ? f.loc : ""} onChange={(e) => muda({ loc: e.target.value })} className="h-12 w-full rounded-xl border border-line bg-white px-3 text-[15px] font-medium">
+            <Bloco titulo="Só deste local">
+              <select value={locais.includes(f.loc) ? f.loc : ""} onChange={(e) => muda({ loc: e.target.value })} className="h-16 w-full rounded-2xl border-0 bg-white px-4 text-[16px] font-semibold">
                 <option value="">Todos os locais</option>{locais.map((x) => <option key={x} value={x}>{x === local ? `${x} (meu local)` : x}</option>)}
               </select>
             </Bloco>
@@ -845,31 +857,43 @@ function ListaItens({ itens, etapa, local, escolher, atualizar }: { itens: Row[]
   );
 }
 const Bloco = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => (
-  <div className="mt-4 first:mt-1"><div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-muted">{titulo}</div>{children}</div>
+  <div className="mt-4 first:mt-1"><div className="mb-2 ml-1 text-[12px] font-bold uppercase tracking-wide text-muted">{titulo}</div>{children}</div>
 );
-const Opcao = ({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: React.ReactNode }) => (
-  <button onClick={onClick} className={cx("min-h-11 rounded-xl px-2 py-2 text-[14px] font-semibold leading-tight", ativo ? "bg-ink text-white" : "bg-white text-ink ring-1 ring-line")}>{children}</button>
+const Opcao = ({ ativo, onClick, sub, children }: { ativo: boolean; onClick: () => void; sub?: string; children: React.ReactNode }) => (
+  <button onClick={onClick} className={cx("px-2 py-1.5 text-[15px] font-semibold leading-tight", ativo ? "bg-ink text-white" : "bg-white text-ink")}>{children}{sub != null && <small className={cx("block text-[13px] tabular-nums", ativo ? "text-slate-300" : "text-muted")}>{sub}</small>}</button>
 );
+
+// Esqueleto com a forma das linhas (padrão Carregando): só aparece depois de 0,2 s
+function EsqLista() {
+  const [ver, setVer] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVer(true), 200); return () => clearTimeout(t); }, []);
+  return (
+    <div aria-busy="true" aria-label="Carregando lista" className={cx(!ver && "invisible")}>
+      <div className="lres"><span className="sk mt-1 h-3 w-[150px]" /></div>
+      <div className="lls">{[70, 92, 58, 84, 66, 88].map((w, k) => (
+        <div key={k} className="flex min-h-[72px] items-center gap-3 border-b border-line py-2.5 pl-4 pr-3.5">
+          <span className="size-7 shrink-0 rounded-full border-[2.5px] border-[#e6eaee]" />
+          <div className="min-w-0 flex-1"><span className="sk h-[15px]" style={{ width: `${w}%` }} /><span className="sk mt-2 h-3 w-[38%]" /></div>
+        </div>))}</div>
+    </div>
+  );
+}
 
 function LinhaItem({ i, aud, local, escolher }: { i: Row; aud: boolean; local: string; escolher: (c: string) => void }) {
   const locs = separaLocais(i.locais);
+  const rua = locs.length ? <> · <span className={cx("lc", locs.includes(local) && "meu")}>{locs.join(", ")}</span></> : null;
+  if (aud) return (
+    <button onClick={() => escolher(i.codpro)} className={cx("lit", i.feito && "ok")}>
+      <div><b className="n">{i.nompro}</b>
+        <small>{i.codpro} · Sist. <b>{fq(i.saldo)}</b> · Cont. <b>{fq(i.c1)}</b> · Rec. <b>{fq(i.c2)}</b>{i.final != null && <> · Final <b className="!text-brand-700">{fq(i.final)}</b></>}</small></div>
+      {i.dif == null ? <small className="shrink-0 !whitespace-nowrap">sem contagem</small>
+        : <span className={cx("df", i.dif > 0 && "sob")}><b>{i.dif > 0 ? "+" : ""}{fq(i.dif)}</b><small>{frs(i.valor)}</small></span>}
+    </button>
+  );
   return (
-    <li>
-      <button onClick={() => escolher(i.codpro)} className={cx("flex w-full items-center gap-3 px-3 py-3 text-left active:bg-brand-50", i.feito && "bg-slate-50")}>
-        <span className={cx("grid size-7 shrink-0 place-items-center rounded-full", i.feito ? "bg-brand-600 text-white" : "border-2 border-slate-300")}>{i.feito && <Check className="size-4" strokeWidth={3} />}</span>
-        <span className="min-w-0 flex-1">
-          <span className={cx("line-clamp-2 text-[14px] font-semibold leading-snug", i.feito && "text-slate-500")}>{i.nompro}</span>
-          <span className="block truncate text-[12px] text-muted">Cód. {i.codpro} · {i.unipro}{locs.length ? <> · <MapPin className={cx("-mt-0.5 inline size-3", locs.includes(local) && "text-brand-700")} /> {locs.join(", ")}</> : null}</span>
-          {aud && <span className="mt-0.5 block text-[12px] tabular-nums text-muted">Sist. <b className="text-ink">{fq(i.saldo)}</b> · Cont. <b className="text-ink">{fq(i.c1)}</b> · Rec. <b className="text-ink">{fq(i.c2)}</b>{i.final != null && <> · Final <b className="text-brand-700">{fq(i.final)}</b></>}</span>}
-        </span>
-        {aud ? (
-          i.dif == null ? <span className="shrink-0 text-[12px] text-muted">sem contagem</span> : (
-          <span className={cx("shrink-0 rounded-lg px-2 py-1 text-right tabular-nums", i.dif < 0 ? "bg-rose-50 text-rose-700" : "bg-brand-50 text-brand-700")}>
-            <span className="block text-[16px] font-bold leading-tight">{i.dif > 0 ? "+" : ""}{fq(i.dif)}</span>
-            <span className="block text-[11px] font-semibold opacity-75">{frs(i.valor)}</span>
-          </span>)
-        ) : <ChevronRight className="size-5 shrink-0 text-slate-300" />}
-      </button>
-    </li>
+    <button onClick={() => escolher(i.codpro)} className={cx("lit", i.feito && "ok")}>
+      <span className="ck">{i.feito && <Check className="size-4" strokeWidth={3} />}</span>
+      <div><b className="n">{i.nompro}</b><small>{i.codpro} · {i.unipro}{rua}</small></div>
+    </button>
   );
 }

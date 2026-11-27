@@ -1,5 +1,5 @@
 // Conferência de expedição por pedido (a fila pode ser aberta por romaneio), gravada nas tabelas do próprio Lieto.
-// Dois modos (Sistema › Conferência), congelados na abertura. SEPARACAO: mostra local e quantidade, quem separa já confere, recusa leitura
+// Dois modos, do usuário (liberação "Conferência: ver quantidade e local"; administrador vê sempre), congelados na abertura. SEPARACAO: mostra local e quantidade, quem separa já confere, recusa leitura
 // a mais e o que não tem fica como falta, esperando a gestão (encerrar ou cancelar). CEGA: não mostra nada e reconfere o que divergir:
 //   1ª contagem (cega) -> QNTCON. O que divergir vai para reconferência (cega) -> QNTREC, com NUMREC = ordem.
 //   Tudo certo: DATCON/HORCON/CODCON. Encerrar com divergência (gestão): DATENC/HORENC/CODENC.
@@ -11,6 +11,7 @@ import { db } from "./db";
 import * as erp from "./erp";
 import { adicionais, cods, fatores } from "./cadastro";
 import * as ddl from "./ddl";
+import { ve } from "./permissoes";
 import { Erro, agora, chave, evento, limparObs, obsErp, r4, type Usuario } from "./comum";
 import { comConexao, consultar, emTransacao, executar, hoje, iso, lerBlob, num, txt, type Conexao } from "./fb";
 
@@ -18,23 +19,21 @@ type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-exp
 type Ped = { pedido: number; itens: Record<string, number> };
 type Item = { codpro: string; nompro: string; unipro: string; qtd: number; codigos: string[]; fatores?: Record<string, number>; con: number; rec: number; numrec: number; local?: string; falta?: boolean };
 type Modo = "CEGA" | "SEPARACAO";
-const MODOS: Modo[] = ["SEPARACAO", "CEGA"];
-export const modoAtual = (): Modo => { const v = (db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.modo'").get() as Row | undefined)?.valor; return MODOS.includes(v) ? v : "SEPARACAO"; };
+// antes era do Sistema (conferencia.modo); a migração 1.2.9 passou para a liberação de cada um
+const modoDe = (u: Usuario): Modo => (ve(u, "conferencia_ver") ? "SEPARACAO" : "CEGA");
 // Na separação: se o produto pode ser confirmado pela bipagem (nem toda empresa tem coletor). Sem isto, confirma na tela.
 export const bipar = () => (db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.bipar'").get() as Row | undefined)?.valor === "S";
 // Empresas que liberam o pedido pelo PCP do Lieto (PEDIDOS1.DATPCP). Nelas, só vai para a fila o pedido liberado; nas outras,
 // pedido pendente já está pronto para separar. Nenhuma marcada = ninguém espera o PCP.
 export const pcpEmpresas = (): number[] => { try { const v = JSON.parse((db().prepare("SELECT valor FROM opcoes WHERE chave = 'conferencia.pcp'").get() as Row | undefined)?.valor || "[]"); return Array.isArray(v) ? v.map(Number).filter(Boolean) : []; } catch { return []; } };
-export const opcoes = async () => ({ modo: modoAtual(), bipar: bipar(), pcp: pcpEmpresas(), empresas: await erp.empresas() });
+export const opcoes = async () => ({ bipar: bipar(), pcp: pcpEmpresas(), empresas: await erp.empresas() });
 export async function salvarModo(b: Row, u: Usuario) {
-  if (!MODOS.includes(b.modo)) throw new Erro("Modo de conferência inválido.");
   const existe = new Set((await erp.empresas()).map((e) => e.codemp)), pcp = [...new Set((Array.isArray(b.pcp) ? b.pcp : pcpEmpresas()).map(Number))].filter(Boolean).sort((x, y) => x - y);
   const nao = pcp.find((e) => !existe.has(e)); if (nao) throw new Erro(`A empresa ${nao} não existe no Lieto.`);
   const antes = pcpEmpresas();
-  db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.modo', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(b.modo);
   db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.bipar', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(b.bipar ? "S" : "N");
   db().prepare("INSERT INTO opcoes (chave, valor) VALUES ('conferencia.pcp', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor").run(JSON.stringify(pcp));
-  evento("sistema", "conferencia", u, "ALTEROU MODO DA CONFERÊNCIA", { modo: b.modo, bipar: !!b.bipar, ...(JSON.stringify(antes) !== JSON.stringify(pcp) ? { pcp } : {}) });
+  evento("sistema", "conferencia", u, "ALTEROU A CONFERÊNCIA", { bipar: !!b.bipar, ...(JSON.stringify(antes) !== JSON.stringify(pcp) ? { pcp } : {}) });
   return opcoes();
 }
 const separando = (c: Row) => c.modo === "SEPARACAO";
@@ -180,7 +179,7 @@ export async function abrir(b: Row, u: Usuario) {
     return { rom: num(p.NUMROM), cli: txt(p.NOMCLI), itens: its.map((i): Item => ({ codpro: txt(i.CODPRO), nompro: txt(i.NOMPRO), unipro: txt(i.UNIPRO), qtd: r4(num(i.Q)), con: 0, rec: 0, numrec: 0, local: txt(i.LOCPRO),
       codigos: [txt(i.CODPRO), txt(i.CODBAR), txt(i.CODDUM), txt(i.EANTRI), ...cods(ad.get(txt(i.CODPRO)))].filter(Boolean), fatores: fatores(ad.get(txt(i.CODPRO))) })) };
   });
-  const modo = modoAtual(), ja2 = abertaDe(pedido); if (ja2) { if (ja2.pedido == null) throw new Erro(`Este pedido está na conferência do romaneio ${ja2.romaneio}.`); return obter(ja2.id, false); }
+  const modo = modoDe(u), ja2 = abertaDe(pedido); if (ja2) { if (ja2.pedido == null) throw new Erro(`Este pedido está na conferência do romaneio ${ja2.romaneio}.`); return obter(ja2.id, false); }
   const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, modo, status, codfun, usuario, criado_em) VALUES (?,?,?,?,?,'CONTANDO',?,?,?)").run(pedido, d.rom, d.cli, JSON.stringify(modo === "SEPARACAO" ? [...d.itens].sort(porLocal) : d.itens), modo, u.codfun, u.nome, agora()).lastInsertRowid);
   evento("conferencia", id, u, "ABRIU", { pedido, modo });
   await marcarSeparando(pedido, id, u);
@@ -215,7 +214,7 @@ export async function abrirRomaneio(b: Row, u: Usuario) {
   });
   // daqui até o INSERT não há await: ninguém abre um destes pedidos no meio
   const ja = romaneioAberto(rom); if (ja) return obter(ja.id, false);
-  const modo = modoAtual(), preso = d.pedidos.find((x) => abertaDe(x.pedido));
+  const modo = modoDe(u), preso = d.pedidos.find((x) => abertaDe(x.pedido));
   if (preso) throw new Erro(`O pedido ${preso.pedido} acabou de entrar em conferência. Abra o romaneio de novo.`, 409);
   const id = Number(db().prepare("INSERT INTO conferencias (pedido, romaneio, cliente, itens, pedidos, modo, status, codfun, usuario, criado_em) VALUES (NULL,?,?,?,?,?,'CONTANDO',?,?,?)")
     .run(rom, `${d.pedidos.length} pedido(s)${r.fora.length ? `, ${r.fora.length} fora` : ""}`, JSON.stringify(modo === "SEPARACAO" ? [...d.itens].sort(porLocal) : d.itens), JSON.stringify(d.pedidos), modo, u.codfun, u.nome, agora()).lastInsertRowid);

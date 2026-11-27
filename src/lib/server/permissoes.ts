@@ -5,17 +5,20 @@ import * as erp from "./erp";
 import { Erro, evento, type Usuario } from "./comum";
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-export const ROTINAS = [
+export const ROTINAS: { id: string; nome: string; dica?: string }[] = [
   { id: "gestao", nome: "Acessar a gestão (web)" },
   { id: "inventario", nome: "Inventário: contar" }, { id: "inventario_avulso", nome: "Inventário: abrir avulso" }, { id: "inventario_iniciar", nome: "Inventário: começar programado no coletor" }, { id: "inventario_finalizar", nome: "Inventário: finalizar etapa no coletor" }, { id: "inventario_gestao", nome: "Inventário: gestão e auditoria" }, { id: "inventario_lancar", nome: "Inventário: lançar ajustes no Lieto" },
   { id: "producao", nome: "Produção: apontar" }, { id: "producao_gestao", nome: "Produção: cancelar e reenviar" },
   { id: "transferencia", nome: "Transferência" }, { id: "transformacao", nome: "Transformação" }, { id: "kit", nome: "Kit" }, { id: "perda", nome: "Perdas" }, { id: "estornar", nome: "Estornar movimentos" },
   { id: "cadastro", nome: "Cadastro no coletor" }, { id: "receita", nome: "Cadastro: receita" }, { id: "retorno", nome: "Retorno de mercadorias" },
-  { id: "conferencia", nome: "Conferência de expedição" }, { id: "conferencia_gestao", nome: "Conferência: ver divergência, encerrar e cancelar" }, { id: "xml", nome: "Importação de XML" }, { id: "auditoria", nome: "Auditoria: consultar" },
+  { id: "conferencia", nome: "Conferência de expedição" }, { id: "conferencia_ver", nome: "Conferência: ver quantidade e local", dica: "Desligada: confere cega e reconfere o que divergir." }, { id: "conferencia_gestao", nome: "Conferência: ver divergência, encerrar e cancelar" },
+  { id: "recebimento", nome: "Recebimento: conferir" }, { id: "recebimento_ver", nome: "Recebimento: ver quantidade do pedido", dica: "Desligada: confere cega e reconta o que divergir." }, { id: "recebimento_gestao", nome: "Recebimento: vincular nota, encerrar e cancelar" }, { id: "xml", nome: "Importação de XML" }, { id: "auditoria", nome: "Auditoria: consultar" },
 ];
 const IDS = new Set(ROTINAS.map((r) => r.id));
 
 export const ehAdmin = (u: { codfun: number } | null) => !!u && (getConfig().admins || []).includes(u.codfun);
+// Cega ou com quantidade é do usuário (administrador pode tudo, então vê sempre)
+export const ve = (u: { codfun: number }, rotina: "conferencia_ver" | "recebimento_ver") => de(u).includes(rotina);
 export const de = (u: { codfun: number }): string[] => (ehAdmin(u) ? [...IDS] : (db().prepare("SELECT rotina FROM permissoes WHERE codfun = ?").all(u.codfun) as Row[]).map((r) => r.rotina as string).filter((r) => IDS.has(r)));
 
 // O que cada rota exige: todas as listas precisam ter ao menos uma rotina liberada ("admin" = só administrador; [] = qualquer um logado)
@@ -31,6 +34,8 @@ const FIXAS: Record<string, string[][]> = {
   "POST producao/reprocessar": [["producao_gestao"]], "POST producao/:id/lancar": [["producao_gestao"]], "POST producao/:id/cancelar": [["producao_gestao"]],
   "POST producao": [["producao"]],
   "GET receita/:cod": [["cadastro", "receita"]], "GET receita/:cod/obs": [["cadastro", "receita"]], "GET conferencia": [["conferencia_gestao"]], "GET conferencia/:id/gestao": [["conferencia_gestao"]], "POST conferencia/:id/encerrar": [["conferencia_gestao"]], "POST conferencia/:id/cancelar": [["conferencia_gestao"]],
+  "GET recebimento": [["recebimento_gestao"]], "GET recebimento/:id/gestao": [["recebimento_gestao"]], "GET recebimento/:id/notas": [["recebimento_gestao"]], "POST recebimento/:id/nota": [["recebimento_gestao"]], "POST recebimento/:id/nota/remover": [["recebimento_gestao"]],
+  "POST recebimento/:id/encerrar": [["recebimento_gestao"]], "POST recebimento/:id/recontar": [["recebimento_gestao"]], "POST recebimento/:id/cancelar": [["recebimento_gestao"]], "GET sistema/recebimento": [],
 };
 function exigidas(metodo: string, padrao: string, args: string[]): string[][] {
   const k = `${metodo} ${padrao}`;
@@ -49,6 +54,7 @@ function exigidas(metodo: string, padrao: string, args: string[]): string[][] {
   if (raiz === "receita") return [["receita"]];
   if (raiz === "retorno") return [["retorno"]];
   if (raiz === "conferencia") return [["conferencia", "conferencia_gestao"]];
+  if (raiz === "recebimento") return [["recebimento", "recebimento_gestao"]];
   if (raiz === "xml") return [["xml"]];
   return [["admin"]]; // rota não mapeada: só administrador
 }
@@ -58,7 +64,8 @@ const COLETOR = new Set([...LIVRES, "POST inventarios/avulso", "GET inventarios/
   "GET producao/catalogo", "GET producao/lotes", "GET producao/simular", "GET producao/minhas", "GET producao/:id/paletes", "POST producao/:id/paletes", "POST producao", "POST transferencia", "POST transformacao", "GET transformacao/opcoes", "POST kit", "GET perda/motivos", "POST perda",
   "GET cadastro", "GET cadastro/:cod", "POST cadastro/:cod", "POST cadastro/:cod/barras", "POST cadastro/:cod/barras/alterar", "POST cadastro/:cod/barras/remover", "POST cadastro/:cod/palete",
   "GET receita/:cod", "GET receita/:cod/obs", "POST receita/:cod", "POST receita/:cod/remover", "GET retorno/opcoes", "GET retorno/origem/:tipo/:n", "POST retorno",
-  "GET conferencia/fila", "GET conferencia/romaneios", "GET conferencia/pedido/:n", "GET conferencia/romaneio/:n/volumes", "POST conferencia/romaneio/:n/volumes", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "GET conferencia/minhas", "POST conferencia/:id/falta", "POST conferencia/:id/voltar", "POST conferencia/:id/fechar"]);
+  "GET conferencia/fila", "GET conferencia/romaneios", "GET conferencia/pedido/:n", "GET conferencia/romaneio/:n/volumes", "POST conferencia/romaneio/:n/volumes", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "GET conferencia/minhas", "POST conferencia/:id/falta", "POST conferencia/:id/voltar", "POST conferencia/:id/fechar",
+  "GET recebimento/fila", "GET recebimento/minhas", "GET recebimento/pedido/:n", "POST recebimento", "GET recebimento/:id", "GET recebimento/:id/codigo/:cod", "POST recebimento/:id/leituras", "POST recebimento/:id/falta", "POST recebimento/:id/fechar"]);
 
 export function exigir(u: Usuario, metodo: string, padrao: string, args: string[]) {
   const ex = [...(COLETOR.has(`${metodo} ${padrao}`) ? [] : [["gestao"]]), ...exigidas(metodo, padrao, args)];

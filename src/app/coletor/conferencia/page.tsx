@@ -8,7 +8,7 @@ import { Check, ChevronLeft, CloudOff, Delete, List, ScanBarcode } from "lucide-
 import { cx, useConfirm, useToast } from "@/components/ui";
 import { bip, novoUid } from "@/components/movimentos";
 import { Observacao } from "@/components/observacao";
-import { BotaoG, Cabecalho, Tela } from "@/components/coletor";
+import { BotaoG, Cabecalho, Esqueleto, Tela } from "@/components/coletor";
 import { ApiErro, api, chave, fatorLido, fq, ls, r4, sessao, type Row } from "@/lib/client";
 
 export default function Pagina() { return <Suspense><Fila /></Suspense>; }
@@ -69,12 +69,12 @@ function Fila() {
         <div className="campo-ic"><ScanBarcode /><input enterKeyHint="search" placeholder="Pedido, cliente ou romaneio" value={b} onChange={(e) => setB(e.target.value)} /></div>
         {!b.trim() && <div className="chips">{filtros.map(([k, n]) => <button key={k} className={cx(filtro === k && "sel")} onClick={() => setFiltro(k)}>{n}</button>)}</div>}
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
-        {l === null && <div className="pd animate-pulse" style={{ height: 150 }} />}
+        {l === null && !erro && <Esqueleto classe="pd" altura={150} n={3} />}
         {l?.length === 0 && !erro && <div className="vazio"><Check /><b>Nenhum pedido</b>{b ? "Confira o número ou o nome." : filtro === "hoje" ? "Nada com entrega até hoje. Veja \"Todos\"." : "Nada aqui."}</div>}
         {l?.map((x) => <Cartao key={x.pedido} x={x} abrir={() => setV({ t: "ficha", n: x.pedido })} />)}
       </> : <>
         {erro && <div className="aviso-e">{erro}<button className="bt2 mt-3 w-full !bg-white" onClick={ler}>Tentar de novo</button></div>}
-        {roms === null && <div className="pd animate-pulse" style={{ height: 130 }} />}
+        {roms === null && !erro && <Esqueleto classe="pd" altura={130} n={3} />}
         {roms?.length === 0 && !erro && <div className="vazio"><Check /><b>Nenhum romaneio</b>Nenhum romaneio nos últimos 30 dias.</div>}
         {roms?.map((r) => <button key={r.romaneio} className="pd" onClick={() => setV({ t: "romaneio", n: r.romaneio })}>
           <div className="l1"><b>Romaneio {r.romaneio}</b><span className="ent">saída {dm(r.saida)}</span></div>
@@ -100,7 +100,7 @@ function Romaneio({ n, voltar, ficha, volumes, abrirJunto, oc }: { n: number; vo
         {vol && vol.pedidos.length > 0 && <button className="bt2 mt-2 w-full" onClick={volumes}>{faltaVol ? `Conferir volumes dos ${vol.pedidos.length} já separados` : "Volumes conferidos"}</button>}</>}>
       {erro && <div className="aviso-e">{erro}</div>}
       {l && <div className="rc">{(cab?.caminhao || cab?.motorista) && <small>{[cab.caminhao, cab.motorista].filter(Boolean).join(" · ")}</small>}<b>{conf} de {l.length} pedidos conferidos</b><div className="barra mt-3"><i style={{ width: `${l.length ? (conf / l.length) * 100 : 0}%` }} /></div></div>}
-      {l === null && !erro && <div className="pd animate-pulse" style={{ height: 150 }} />}
+      {l === null && !erro && <Esqueleto classe="pd" altura={150} n={3} />}
       {l?.map((x) => <Cartao key={x.pedido} x={x} rom abrir={() => ficha(x.pedido)} />)}
       {r && r.fora.length > 0 && <div className="aviso-a">Fora da separação junta: {r.fora.map((x: Row) => `${x.pedido} (${x.motivo})`).join(", ")}</div>}
     </Tela>

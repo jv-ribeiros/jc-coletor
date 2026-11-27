@@ -11,7 +11,7 @@ export function Alertas() {
   const [d, setD] = useState<Row | null>(null), [erro, setErro] = useState(""), [oc, setOc] = useState(false), [tudo, setTudo] = useState(false);
   const ler = useCallback(async () => { setOc(true); try { setD(await api("alertas")); setErro(""); } catch (e) { setErro((e as Error).message); } finally { setOc(false); } }, []);
   useEffect(() => { ler(); const t = setInterval(() => { if (!document.hidden) ler(); }, 60_000); return () => clearInterval(t); }, [ler]);
-  if (!d) return <Card className="mt-5 space-y-3 p-5">{erro ? <p className="text-sm text-rose-800">Não foi possível ler os alertas: {erro}</p> : <><div className="h-3.5 w-3/5 animate-pulse bg-line" /><div className="h-3.5 w-2/5 animate-pulse bg-line" /></>}</Card>;
+  if (!d) return <Card className="mt-5 space-y-3 p-5">{erro ? <p className="text-sm text-rose-800">Não foi possível ler os alertas: {erro}</p> : <><span className="sk h-3.5 w-[55%]" /><span className="sk h-3.5 w-[38%]" /><span className="sk h-3.5 w-[46%]" /></>}</Card>;
   const l = d.alertas as Row[], ver = tudo ? l : l.slice(0, 10);
   return (
     <section className="mt-5">

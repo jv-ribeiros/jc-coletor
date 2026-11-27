@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, Database, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { EmpresasRotina } from "@/components/empresas-rotina";
 import { ModoConferencia } from "@/components/modo-conferencia";
+import { RecebimentoSistema } from "@/components/recebimento-sistema";
 import { Topo } from "@/components/topo";
 import { Badge, Button, Card, Carregando, cx, useConfirm, useToast } from "@/components/ui";
 import { api, fdata, sessao, type Row } from "@/lib/client";
@@ -29,7 +30,7 @@ export default function Sistema() {
     catch (e) { toast((e as Error).message, "erro"); }
   }
 
-  if (!s) return <><Topo /><Carregando /></>;
+  if (!s) return <><Topo /><Carregando pagina /></>;
   const ruins = s.rotinas.filter((r: Row) => !r.ok);
   return (
     <>
@@ -38,6 +39,7 @@ export default function Sistema() {
         <h1 className="text-2xl font-semibold tracking-tight">Sistema</h1>
         <EmpresasRotina admin={admin} />
         <ModoConferencia admin={admin} />
+        <RecebimentoSistema admin={admin} />
         <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">Conformidade do banco do Lieto</h2>

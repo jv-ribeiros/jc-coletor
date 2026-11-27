@@ -198,8 +198,20 @@ export function Vazio({ icone, titulo, texto, children }: { icone: React.ReactNo
   );
 }
 
-export function Carregando() {
-  return <div className="grid min-h-[50vh] place-items-center text-muted"><LoaderCircle className="size-6 animate-spin" /></div>;
+// Padrão Carregando: nada de rodinha no meio da tela. Linhas cinzas no lugar do conteúdo, só depois de 0,2 s (não pisca);
+// passou de 8 s, diz que está demorando.
+export function Carregando({ linhas = 6, pagina }: { linhas?: number; pagina?: boolean }) {
+  const [t, setT] = useState(0);
+  useEffect(() => { const a = setTimeout(() => setT(1), 200), b = setTimeout(() => setT(2), 8000); return () => { clearTimeout(a); clearTimeout(b); }; }, []);
+  return (
+    <div className={pagina ? "mx-auto max-w-[1400px] px-4 py-6 sm:px-6" : "p-2"} aria-busy="true" aria-label="Carregando">
+      <div className={cx("space-y-3", !t && "invisible")}>
+        {pagina && <><span className="sk h-7 w-64" /><span className="sk h-4 w-96 max-w-full" /></>}
+        <div className={cx("space-y-px overflow-hidden", pagina && "mt-5 rounded-xl border border-line bg-white")}>{Array.from({ length: linhas }, (_, k) => <div key={k} className="flex items-center gap-4 px-5 py-4"><span className="sk h-3.5" style={{ width: `${[38, 52, 30, 46, 41, 34][k % 6]}%` }} /><span className="sk ml-auto h-3.5 w-20" /></div>)}</div>
+        {t === 2 && <p className="text-sm text-muted">O servidor está demorando mais que o normal. Continua tentando.</p>}
+      </div>
+    </div>
+  );
 }
 
 // ---------- paginação ----------

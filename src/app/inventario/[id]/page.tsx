@@ -35,7 +35,7 @@ export default function Painel() {
   const ind = useMemo(() => (d ? indicadores(d.itens) : null), [d]);
 
   if (erro) return <><Topo /><div className="mx-auto max-w-xl p-10"><Card><Vazio icone={<CircleAlert className="size-6" />} titulo="Não foi possível abrir" texto={erro} /></Card></div></>;
-  if (!d || !ind) return <><Topo /><Carregando /></>;
+  if (!d || !ind) return <><Topo /><Carregando pagina /></>;
   const { inv } = d, { t } = ind;
   if (inv.etapa === "PROGRAMADO") return <><Topo /><Programado inv={inv} /></>;
 
