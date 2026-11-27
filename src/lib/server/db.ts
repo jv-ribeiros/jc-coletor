@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS sem_validade (codpro TEXT PRIMARY KEY, por TEXT, em T
 CREATE TABLE IF NOT EXISTS sessoes (token TEXT PRIMARY KEY, codfun INTEGER, nome TEXT, nomfun TEXT, criado_em TEXT, visto_em TEXT);
 CREATE TABLE IF NOT EXISTS inv_fixas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, regra TEXT NOT NULL, inicio TEXT NOT NULL, ultima TEXT, codemp INTEGER, nomemp TEXT, escopo TEXT,
   etapa TEXT, responsavel TEXT, antecipar INTEGER DEFAULT 1, obs TEXT, ativa INTEGER DEFAULT 1, criada_por TEXT, criada_em TEXT, encerrada_por TEXT, encerrada_em TEXT);
+CREATE TABLE IF NOT EXISTS impressoras (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, onde TEXT NOT NULL, pc TEXT, fila TEXT, ip TEXT, porta INTEGER, tipo TEXT NOT NULL, dpi INTEGER, largura REAL, altura REAL,
+  ultimo_em TEXT, ultimo_ok INTEGER, ultimo_msg TEXT, por TEXT, em TEXT);
+CREATE TABLE IF NOT EXISTS impressoes (id INTEGER PRIMARY KEY, em TEXT, impressora INTEGER, nome TEXT, oque TEXT, n INTEGER, ok INTEGER, msg TEXT, usuario TEXT);
 `;
 
 // colunas adicionadas depois da 1ª versão (bancos existentes são atualizados)

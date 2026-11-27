@@ -35,7 +35,7 @@ const FIXAS: Record<string, string[][]> = {
   "POST producao": [["producao"]],
   "GET receita/:cod": [["cadastro", "receita"]], "GET receita/:cod/obs": [["cadastro", "receita"]], "GET conferencia": [["conferencia_gestao"]], "GET conferencia/:id/gestao": [["conferencia_gestao"]], "POST conferencia/:id/encerrar": [["conferencia_gestao"]], "POST conferencia/:id/cancelar": [["conferencia_gestao"]],
   "GET recebimento": [["recebimento_gestao"]], "GET recebimento/:id/gestao": [["recebimento_gestao"]], "GET recebimento/:id/notas": [["recebimento_gestao"]], "POST recebimento/:id/nota": [["recebimento_gestao"]], "POST recebimento/:id/nota/remover": [["recebimento_gestao"]],
-  "POST recebimento/:id/encerrar": [["recebimento_gestao"]], "POST recebimento/:id/recontar": [["recebimento_gestao"]], "POST recebimento/:id/cancelar": [["recebimento_gestao"]], "GET sistema/recebimento": [],
+  "POST recebimento/:id/encerrar": [["recebimento_gestao"]], "POST recebimento/:id/recontar": [["recebimento_gestao"]], "POST recebimento/:id/cancelar": [["recebimento_gestao"]], "GET sistema/recebimento": [], "GET sistema/impressoras": [],
 };
 function exigidas(metodo: string, padrao: string, args: string[]): string[][] {
   const k = `${metodo} ${padrao}`;
@@ -64,7 +64,7 @@ const COLETOR = new Set([...LIVRES, "POST inventarios/avulso", "GET inventarios/
   "GET producao/catalogo", "GET producao/lotes", "GET producao/simular", "GET producao/minhas", "GET producao/:id/paletes", "POST producao/:id/paletes", "POST producao", "POST transferencia", "POST transformacao", "GET transformacao/opcoes", "POST kit", "GET perda/motivos", "POST perda",
   "GET cadastro", "GET cadastro/:cod", "POST cadastro/:cod", "POST cadastro/:cod/barras", "POST cadastro/:cod/barras/alterar", "POST cadastro/:cod/barras/remover", "POST cadastro/:cod/palete",
   "GET receita/:cod", "GET receita/:cod/obs", "POST receita/:cod", "POST receita/:cod/remover", "GET retorno/opcoes", "GET retorno/origem/:tipo/:n", "POST retorno",
-  "GET conferencia/fila", "GET conferencia/romaneios", "GET conferencia/pedido/:n", "GET conferencia/romaneio/:n/volumes", "POST conferencia/romaneio/:n/volumes", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "GET conferencia/minhas", "POST conferencia/:id/falta", "POST conferencia/:id/voltar", "POST conferencia/:id/fechar",
+  "GET conferencia/fila", "POST conferencia/adesivos", "GET conferencia/romaneios", "GET conferencia/pedido/:n", "GET conferencia/romaneio/:n/volumes", "POST conferencia/romaneio/:n/volumes", "GET conferencia/romaneio/:n", "POST conferencia/romaneio", "GET conferencia/:id", "POST conferencia", "POST conferencia/:id/contar", "GET conferencia/minhas", "POST conferencia/:id/falta", "POST conferencia/:id/voltar", "POST conferencia/:id/fechar",
   "GET recebimento/fila", "GET recebimento/minhas", "GET recebimento/pedido/:n", "POST recebimento", "GET recebimento/:id", "GET recebimento/:id/codigo/:cod", "POST recebimento/:id/leituras", "POST recebimento/:id/falta", "POST recebimento/:id/fechar"]);
 
 export function exigir(u: Usuario, metodo: string, padrao: string, args: string[]) {

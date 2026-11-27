@@ -135,6 +135,10 @@ body.coletor button, body.coletor a, body.coletor label { touch-action: manipula
 .ent { margin-left: auto; font-size: 14.5px; font-weight: 650; } .ent.atr { color: #a51d39; } .ent.hj { color: var(--ok); } .kv .ent { margin-left: 0; }
 .pd .cl { font-size: 16.5px; font-weight: 600; margin-top: 2px; line-height: 1.25; } .pd .in, .rc small { font-size: 14.5px; color: var(--color-muted); margin-top: 3px; display: block; }
 .pd .ft { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.im { background: #fff; border-radius: 24px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; } .im > div { display: flex; gap: 12px; align-items: center; } .im > div > svg { width: 28px; height: 28px; flex: none; }
+.im b { display: block; font-size: 17px; } .im small { display: block; font-size: 14px; color: var(--color-muted); } .im.sa > div > svg { color: #25915a; } .im.am { background: #fdf1d8; } .im.am > div > svg, .im.am small { color: #7a5200; }
+.im ul { margin: 0; padding: 0; list-style: none; font-size: 14.5px; } .im li { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #e1e5ea; }
+.vs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; } .vs button { min-height: 60px; border-radius: 18px; background: var(--sv); font-size: 19px; font-weight: 700; border: 2px solid transparent; } .vs button.on { border-color: #2f4257; background: #e4eaf1; }
 .pd .l1 .lib { margin-left: auto; font-size: 14.5px; font-weight: 700; color: #3b3f9e; background: #e9eafb; border-radius: 10px; padding: 4px 9px; white-space: nowrap; } .pd .l1 .ord { font-size: 14px; font-weight: 700; color: var(--color-muted); min-width: 24px; }
 .pd .in .atr { color: #a51d39; font-weight: 650; } .pd .in .hj { color: var(--ok); font-weight: 650; }
 .tag { font-size: 13.5px; font-weight: 700; border-radius: 10px; padding: 5px 10px; background: var(--sv); } .tag.pcp { background: #e9eafb; color: #3b3f9e; } .tag.sep { background: #fdf1d8; color: #7a5200; } .tag.ok { background: #e2f3ea; color: var(--ok); } .tag.er { background: #fdeaee; color: #a51d39; } .tag.am { background: #f8efdc; color: #8a5a00; }

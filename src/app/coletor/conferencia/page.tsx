@@ -4,7 +4,7 @@
 //   Cega: bipou, contou. Só mostra o último lido.
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Check, ChevronLeft, CloudOff, Delete, List, ScanBarcode } from "lucide-react";
+import { Check, ChevronLeft, CloudOff, Delete, List, Printer, ScanBarcode, TriangleAlert } from "lucide-react";
 import { cx, useConfirm, useToast } from "@/components/ui";
 import { bip, novoUid } from "@/components/movimentos";
 import { Observacao } from "@/components/observacao";
@@ -36,7 +36,7 @@ function etapa(x: Row) {
 }
 // A liberação do PCP (data e hora) fica na 1ª linha; sem ela, a entrega. pos = lugar na fila do PCP (design/pages/conferencia-pedidos_v3.html).
 function Cartao({ x, abrir, rom, pos }: { x: Row; abrir: () => void; rom?: boolean; pos?: number }) {
-  const fora = !["PED", "FAT"].includes(x.situacao), outro = (x.conferencia && !x.id) || x.noRomaneio;
+  const fora = !["PED", "FAT"].includes(x.situacao), outro = ((x.conferencia === "EM ANDAMENTO" || x.conferencia === "AGUARDA GESTÃO") && !x.id) || x.noRomaneio || x.conferencia === "ABERTA NO LIETO";
   const et = fora ? <span className="tag er">Situação {x.situacao}</span> : etapa(x);
   return (
     <button className={cx("pd", x.aguardaPcp && "ap")} disabled={fora || !!outro} onClick={abrir}>
@@ -117,17 +117,19 @@ function Romaneio({ n, voltar, ficha, volumes, abrirJunto, oc }: { n: number; vo
 function Ficha({ n, voltar, comecar, oc }: { n: number; voltar: () => void; comecar: (x: Row) => void; oc: boolean }) {
   const [d, setD] = useState<Row | null>(null), [erro, setErro] = useState("");
   useEffect(() => { api(`conferencia/pedido/${n}`).then(setD).catch((e) => setErro((e as Error).message)); }, [n]);
-  const meu = d && d.id, outro = d && ((d.conferencia && !d.id) || d.noRomaneio), fora = d && !["PED", "FAT"].includes(d.situacao);
+  const meu = d && d.id, andando = d && (d.conferencia === "EM ANDAMENTO" || d.conferencia === "AGUARDA GESTÃO"), outro = d && ((andando && !d.id) || d.noRomaneio), fora = d && !["PED", "FAT"].includes(d.situacao);
+  const feito = d && (d.conferencia === "CONFERIDA" || d.conferencia === "ENCERRADA"), noLieto = d?.conferencia === "ABERTA NO LIETO";
   // sem PCP na empresa, a etapa "Liberado no PCP" nunca acontece: sai da linha do tempo (a não ser que o Lieto tenha a data)
   const comPcp = !!d && (d.usaPcp || !!d.pcp.pcp);
   const etapas: [string, string, boolean][] = d ? [["Pedido", d.criado ? dm(String(d.criado).slice(0, 10)) : "", true], ...(comPcp ? [["Liberado no PCP", dm(d.pcp.pcp), !!d.pcp.pcp] as [string, string, boolean]] : []), ["Separação", dm(d.pcp.sep), !!d.pcp.sep], ["Conferência", dm(d.pcp.con), !!d.pcp.con], ["Faturado", dm(d.pcp.fat), !!d.pcp.fat], ["Expedido", dm(d.pcp.exp), !!d.pcp.exp]] : [];
   const prox = etapas.findIndex((e) => !e[2]);
   return (
     <Tela titulo={`Pedido ${n}`} sub={d ? [d.romaneio > 0 && `Romaneio ${d.romaneio}`, d.ordem > 0 && `${d.ordem}º na carga`].filter(Boolean).join(" · ") : ""} voltar={voltar}
-      rodape={d && <BotaoG disabled={oc || !!outro || !!fora || d.aguardaPcp} onClick={() => comecar(d)}>{oc ? "Abrindo…" : meu ? (d.usuario === sessao.usuario()?.nome ? "Continuar a separar" : `Continuar · ${d.usuario}`) : outro ? `Com ${d.usuario}` : fora ? `Situação ${d.situacao}` : d.conferencia ? "Já conferido" : d.aguardaPcp ? "Aguardando liberação no PCP" : "Começar a separar"}</BotaoG>}>
+      rodape={d && <BotaoG disabled={oc || !!outro || !!fora || !!feito || noLieto || d.aguardaPcp} onClick={() => comecar(d)}>{oc ? "Abrindo…" : meu ? (d.usuario === sessao.usuario()?.nome ? "Continuar a separar" : `Continuar · ${d.usuario}`) : outro ? `Com ${d.usuario}` : fora ? `Situação ${d.situacao}` : feito ? "Já conferido" : noLieto ? "Aberta no Lieto: termine lá" : d.aguardaPcp ? "Aguardando liberação no PCP" : "Começar a separar"}</BotaoG>}>
       {erro && <div className="aviso-e">{erro}</div>}
       {!d && !erro && <div className="pd animate-pulse" style={{ height: 200 }} />}
       {d && <>
+        {feito && d.adesivo && <Adesivos pedidos={[n]} total={d.volumes} />}
         <div className="cx"><h3>Cliente</h3><div className="text-[18px] font-semibold">{d.cliente}</div>
           <div className="kv">{d.cidade && <><span>Cidade</span><b>{d.cidade}</b></>}{d.entrega && <><span>Entrega</span><b><Entrega d={d.entrega} /></b></>}{d.vendedor && <><span>Vendedor</span><b>{d.vendedor}</b></>}{d.rota && <><span>Rota</span><b>{d.rota}</b></>}
             <span>Tamanho</span><b>{[`${d.itens} itens`, d.volumes > 0 && `${d.volumes} vol.`, d.peso > 0 && `${fq(Math.round(d.peso))} kg`].filter(Boolean).join(" · ")}</b></div></div>
@@ -138,6 +140,34 @@ function Ficha({ n, voltar, comecar, oc }: { n: number; voltar: () => void; come
       </>}
     </Tela>
   );
+}
+
+// Adesivos de volume (design/pages/impressoras_v1.html): no fim da conferência saem sozinhos e o cartão diz se saíram; falhou, "Tentar de novo".
+// Reimprimir: todos, ou só os volumes que rasgaram (pedido único). Sem "inicial" (ficha do pedido conferido): só o botão de reimprimir.
+function Adesivos({ pedidos, inicial, total }: { pedidos: number[]; inicial?: Row; total?: number }) {
+  const [r, setR] = useState<Row | null>(inicial ?? null), [oc, setOc] = useState(false), [esc, setEsc] = useState<number[] | null>(null);
+  const n = total || (pedidos.length === 1 ? r?.pedidos?.[0]?.total : 0) || 0;
+  async function imprimir(volumes?: number[]) {
+    setOc(true);
+    try { setR(await api("conferencia/adesivos", { pedidos, volumes })); setEsc(null); } catch (e) { setR({ ok: false, erro: (e as Error).message }); } finally { setOc(false); }
+  }
+  if (oc) return <div className="im"><div><Printer /><div><b>Enviando os adesivos…</b><small>{r?.impressora || ""}</small></div></div></div>;
+  if (esc) return (
+    <div className="im"><b>Reimprimir adesivos</b>
+      <button className="bt2 !bg-white" style={{ border: "2px solid var(--line, #e1e5ea)" }} onClick={() => imprimir()}>Todos os {n}</button>
+      <small>Ou só os que rasgaram</small>
+      <div className="vs">{Array.from({ length: n }, (_, k) => k + 1).map((v) => <button key={v} className={cx(esc.includes(v) && "on")} onClick={() => setEsc((x) => (x!.includes(v) ? x!.filter((y) => y !== v) : [...x!, v]))}>{v}/{n}</button>)}</div>
+      <button className="bt2" disabled={!esc.length} onClick={() => imprimir([...esc].sort((a, b) => a - b))}>{esc.length ? `Imprimir ${esc.length} adesivo(s)` : "Escolha os volumes"}</button>
+      <button className="bt2 !bg-transparent !min-h-[48px]" onClick={() => setEsc(null)}>Voltar</button>
+    </div>);
+  const reimprimir = () => (pedidos.length === 1 && n > 1 ? setEsc([]) : imprimir());
+  if (!r) return <div className="im"><div><Printer /><div><b>Adesivos de volume</b><small>{n ? `${n} volume(s)` : ""}</small></div></div><button className="bt2" onClick={reimprimir}>Reimprimir adesivos</button></div>;
+  if (r.manual) return <div className="im"><div><Printer /><div><b>Adesivos de volume</b><small>{r.impressora}</small></div></div><button className="bt2" onClick={() => imprimir()}>Imprimir os adesivos</button></div>;
+  if (!r.ok) return <div className="im am"><div><TriangleAlert /><div><b>Os adesivos não saíram</b><small>{r.erro}</small></div></div><button className="bt2 !bg-white" onClick={() => imprimir()}>Tentar de novo</button></div>;
+  return (
+    <div className="im sa"><div><Printer /><div><b>{r.n} {r.n === 1 ? "adesivo enviado" : "adesivos enviados"}</b><small>{r.impressora}{r.em ? ` · ${String(r.em).slice(11, 16)}` : ""}</small></div></div>
+      {r.pedidos?.length > 1 && <ul>{r.pedidos.map((x: Row) => <li key={x.pedido}><span>Pedido {x.pedido}</span><b>{x.n}</b></li>)}</ul>}
+      <button className="bt2" onClick={reimprimir}>Reimprimir</button></div>);
 }
 
 // Volumes no fim da separação: um pedido por vez (romaneio somado pergunta pedido a pedido).
@@ -269,6 +299,7 @@ function Contagem({ inicial, sair }: { inicial: Row; sair: () => void }) {
       <div className="vazio">{c.aguarda ? <CloudOff className="!text-amber-600" /> : <Check />}<b>{c.aguarda ? "Esperando a gestão" : c.status === "CONFERIDA" ? "Conferido" : c.status}</b>
         {c.aguarda ? "Faltou produto. A gestão decide." : c.status === "CONFERIDA" ? (c.pedidos ? `${c.pedidos.length} pedido(s) gravados no Lieto.` : `Conferência nº ${c.numide} no Lieto.`) : ""}</div>
       {c.aguarda && <button className="bt2" disabled={oc} onClick={voltar}>Achei o produto: voltar a separar</button>}
+      {c.status === "CONFERIDA" && c.impressao && <Adesivos pedidos={c.pedidos || [c.pedido]} inicial={c.impressao} />}
     </Tela>
   );
   if (tela === "volumes") return <Volumes pedidos={c.pedidos || [c.pedido]} voltar={() => setTela("contar")} concluir={(v) => fechar(v)} oc={oc} />;

@@ -20,6 +20,7 @@ import * as CF from "@/lib/server/conferencia";
 import * as RC from "@/lib/server/receita";
 import * as RB from "@/lib/server/recebimento";
 import * as P from "@/lib/server/producao";
+import * as IM from "@/lib/server/impressao";
 import { Erro } from "@/lib/server/comum";
 
 export const dynamic = "force-dynamic";
@@ -231,7 +232,8 @@ const rotas: [string, string, Handler][] = [
   ["GET", "conferencia/:id/gestao", ({ p }) => CF.obter(Number(p[0]), true)],
   ["POST", "conferencia", ({ body, usuario }) => CF.abrir(body, usuario!)],
   ["POST", "conferencia/:id/contar", ({ p, body, usuario }) => CF.contar(Number(p[0]), body, usuario!)],
-  ["POST", "conferencia/:id/fechar", ({ p, body, usuario }) => CF.fechar(Number(p[0]), usuario!, body.obs, body.volumes)],
+  ["POST", "conferencia/:id/fechar", async ({ p, body, usuario }) => IM.aoConferir(await CF.fechar(Number(p[0]), usuario!, body.obs, body.volumes), usuario!)],
+  ["POST", "conferencia/adesivos", ({ body, usuario }) => { const ps = (Array.isArray(body.pedidos) ? body.pedidos : []).map(Number).filter(Boolean); if (!ps.length) throw new Erro("Informe o pedido."); return IM.imprimirAdesivos(ps.map((pedido: number) => ({ pedido, volumes: ps.length === 1 && Array.isArray(body.volumes) ? body.volumes : undefined })), usuario); }],
   ["POST", "conferencia/:id/encerrar", ({ p, body, usuario }) => CF.encerrar(Number(p[0]), usuario!, body.obs)],
   ["POST", "conferencia/:id/cancelar", ({ p, body, usuario }) => CF.cancelar(Number(p[0]), usuario!, body.obs)],
 
@@ -242,6 +244,13 @@ const rotas: [string, string, Handler][] = [
   ["GET", "recebimento", () => RB.listar()],
   ["POST", "recebimento", ({ body, usuario }) => RB.abrir(body, usuario!)],
   ["GET", "sistema/recebimento", () => RB.opcoes()],
+  ["GET", "sistema/impressoras", () => IM.lista()],
+  ["POST", "sistema/impressoras", ({ body, usuario }) => { exigirAdmin(usuario); return IM.salvar(body, usuario!); }],
+  ["POST", "sistema/impressoras/:id/excluir", ({ p, usuario }) => { exigirAdmin(usuario); return IM.excluir(Number(p[0]), usuario!); }],
+  ["GET", "sistema/impressoras/procurar", ({ q, usuario }) => { exigirAdmin(usuario); return IM.procurar(q.get("pc")); }],
+  ["POST", "sistema/impressoras/acesso", ({ body, usuario }) => { exigirAdmin(usuario); return IM.acesso(body, usuario!); }],
+  ["POST", "sistema/impressoras/teste", ({ body, usuario }) => { exigirAdmin(usuario); return IM.teste(body, usuario!); }],
+  ["POST", "sistema/impressoras/adesivo", ({ body, usuario }) => { exigirAdmin(usuario); return IM.salvarAdesivo(body, usuario!); }],
   ["POST", "sistema/recebimento", ({ body, usuario }) => { exigirAdmin(usuario); return RB.salvarOpcoes(body, usuario!); }],
   ["GET", "recebimento/:id", ({ p }) => RB.obter(Number(p[0]))],
   ["GET", "recebimento/:id/gestao", ({ p }) => RB.gestao(Number(p[0]))],

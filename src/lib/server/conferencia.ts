@@ -14,6 +14,7 @@ import * as ddl from "./ddl";
 import { ve } from "./permissoes";
 import { Erro, agora, chave, evento, limparObs, obsErp, r4, type Usuario } from "./comum";
 import { comConexao, consultar, emTransacao, executar, hoje, iso, lerBlob, num, txt, type Conexao } from "./fb";
+import { adesivoCfg } from "./impressao";
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Ped = { pedido: number; itens: Record<string, number> };
@@ -120,7 +121,7 @@ export async function ficha(n: number) {
     const cab = (await consultar(c, "select a.obsped, a.datdoc, v.nomven from pedidos1 a left join vendedores v on v.codven = a.codven where a.numdoc = ?", [n]))[0];
     const its = await consultar(c, "select b.codpro, max(p.nompro) nompro, max(p.unipro) unipro, max(p.locpro) locpro, sum(b.qntpro) q from pedidos2 b join produtos p on p.codpro = b.codpro where b.numdoc = ? and b.baiest = 'S' group by b.codpro", [n]);
     const itens = its.map((i) => ({ codpro: txt(i.CODPRO), nompro: txt(i.NOMPRO), unipro: txt(i.UNIPRO), local: txt(i.LOCPRO), qtd: r4(num(i.Q)) })).sort((a, b) => Number(!a.local) - Number(!b.local) || a.local.localeCompare(b.local, "pt-BR", { numeric: true }) || a.nompro.localeCompare(b.nompro));
-    return { ...p, vendedor: txt(cab?.NOMVEN), obs: (await lerBlob(cab?.OBSPED)).trim(), criado: cab?.DATDOC ?? null, lista: itens };
+    return { ...p, vendedor: txt(cab?.NOMVEN), obs: (await lerBlob(cab?.OBSPED)).trim(), criado: cab?.DATDOC ?? null, lista: itens, adesivo: !!adesivoCfg().impressora };
   });
 }
 

@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, Database, RefreshCw, ShieldAlert, ShieldCheck
 import { EmpresasRotina } from "@/components/empresas-rotina";
 import { ModoConferencia } from "@/components/modo-conferencia";
 import { RecebimentoSistema } from "@/components/recebimento-sistema";
+import { ImpressorasSistema } from "@/components/impressoras-sistema";
 import { Topo } from "@/components/topo";
 import { Badge, Button, Card, Carregando, cx, useConfirm, useToast } from "@/components/ui";
 import { api, fdata, sessao, type Row } from "@/lib/client";
@@ -40,6 +41,7 @@ export default function Sistema() {
         <EmpresasRotina admin={admin} />
         <ModoConferencia admin={admin} />
         <RecebimentoSistema admin={admin} />
+        <ImpressorasSistema admin={admin} />
         <div className="mt-8 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight">Conformidade do banco do Lieto</h2>
